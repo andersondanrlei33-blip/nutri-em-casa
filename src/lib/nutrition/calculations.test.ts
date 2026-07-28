@@ -56,9 +56,27 @@ test("TDEE aplica o fator de atividade correto", () => {
 });
 
 test("Meta calórica por objetivo aplica déficit/superávit esperado", () => {
-  assert.equal(calcularMetaCalorica(2000, "emagrecimento"), 1600);
-  assert.equal(calcularMetaCalorica(2000, "manutencao"), 2000);
-  assert.equal(calcularMetaCalorica(2000, "ganho_massa"), 2240);
+  assert.equal(calcularMetaCalorica(2000, "emagrecimento", "masculino").valor, 1600);
+  assert.equal(calcularMetaCalorica(2000, "manutencao", "masculino").valor, 2000);
+  assert.equal(calcularMetaCalorica(2000, "ganho_massa", "masculino").valor, 2240);
+});
+
+test("Meta calórica nunca fica abaixo do piso seguro por gênero", () => {
+  const resultado = calcularMetaCalorica(1300, "emagrecimento", "feminino");
+  assert.equal(resultado.valor, 1200); // 1300*0.8=1040 < piso 1200 -> usa o piso
+  assert.ok(resultado.avisoSeguranca);
+});
+
+test("Gestante/lactante/histórico de TA nunca recebem déficit ou superávit automático", () => {
+  const gestante = calcularMetaCalorica(2200, "emagrecimento", "feminino", { gestante: true });
+  assert.equal(gestante.valor, 2200); // mantém o TDEE, sem déficit
+  assert.ok(gestante.avisoSeguranca?.includes("gravidez"));
+
+  const historico = calcularMetaCalorica(2200, "ganho_massa", "masculino", {
+    historicoTranstornoAlimentar: true,
+  });
+  assert.equal(historico.valor, 2200); // mantém o TDEE, sem superávit
+  assert.ok(historico.avisoSeguranca?.includes("transtorno alimentar"));
 });
 
 test("Macros somam aproximadamente a meta calórica", () => {

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { gerarResultadoAvaliacao } from "@/lib/nutrition/calculations";
 import { gerarPlanoAlimentar } from "@/lib/nutrition/mealPlanGenerator";
-import type { AvaliacaoNutricional } from "@/types/domain";
+import type { AvaliacaoNutricional, Receita } from "@/types/domain";
 
 const CorpoSchema = z.object({
   peso_kg: z.number().positive(),
@@ -28,6 +28,11 @@ const CorpoSchema = z.object({
   qualidade_sono: z.number().int().min(1).max(5).nullable().optional(),
   nivel_estresse: z.number().int().min(1).max(5).nullable().optional(),
   observacoes: z.string().nullable().optional(),
+  // Triagem de segurança: quando marcados, o motor de cálculo nunca aplica
+  // déficit/superávit automático (ver lib/nutrition/calculations.ts).
+  gestante: z.boolean().default(false),
+  lactante: z.boolean().default(false),
+  historico_transtorno_alimentar: z.boolean().default(false),
 });
 
 /**
@@ -60,6 +65,9 @@ export async function POST(request: Request) {
     genero: dados.genero,
     nivelAtividade: dados.nivel_atividade,
     objetivo: dados.objetivo,
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+    historicoTranstornoAlimentar: dados.historico_transtorno_alimentar,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase
@@ -82,6 +90,10 @@ export async function POST(request: Request) {
       qualidade_sono: dados.qualidade_sono ?? null,
       nivel_estresse: dados.nivel_estresse ?? null,
       observacoes: dados.observacoes ?? null,
+      gestante: dados.gestante,
+      lactante: dados.lactante,
+      historico_transtorno_alimentar: dados.historico_transtorno_alimentar,
+      ajuste_seguranca: resultado.avisoSeguranca,
       imc: resultado.imc,
       classificacao_imc: resultado.classificacaoImc,
       tmb: resultado.tmb,
@@ -116,15 +128,28 @@ export async function POST(request: Request) {
     );
   }
 
-  const planoGerado = await gerarPlanoAlimentar(avaliacaoSalva as AvaliacaoNutricional);
+  // Biblioteca de receitas disponível pro paciente (globais + próprias),
+  // usada pelo gerador pra vincular refeições reais em vez de texto solto —
+  // isso também é o que faz a Lista de Compras funcionar automaticamente.
+  const { data: receitasDisponiveis } = await supabase
+    .from("receitas")
+    .select("*")
+    .or(`usuario_id.eq.${user.id},usuario_id.is.null`);
+
+  const planoGerado = await gerarPlanoAlimentar(
+    avaliacaoSalva as AvaliacaoNutricional,
+    (receitasDisponiveis ?? []) as Receita[]
+  );
 
   const linhasRefeicoes = planoGerado.refeicoes.map((refeicao, indice) => ({
     plano_id: plano.id,
-    receita_id: null,
+    receita_id: refeicao.receita_id ?? null,
     dia_semana: refeicao.dia_semana,
-    nome_refeicao: `${refeicao.nome_refeicao} — ${refeicao.descricao}`.slice(0, 250),
+    nome_refeicao: refeicao.receita_id
+      ? refeicao.nome_refeicao.slice(0, 250)
+      : `${refeicao.nome_refeicao} — ${refeicao.descricao}`.slice(0, 250),
     horario: refeicao.horario,
-    quantidade_porcoes: 1,
+    quantidade_porcoes: refeicao.quantidade_porcoes ?? 1,
     ordem: indice,
   }));
 
@@ -140,5 +165,6 @@ export async function POST(request: Request) {
     avaliacao: avaliacaoSalva,
     plano,
     observacoesNutricionista: planoGerado.observacoes_nutricionista,
+    avisoSeguranca: resultado.avisoSeguranca,
   });
 }

@@ -65,6 +65,13 @@ export interface AvaliacaoNutricional {
   qualidade_sono: number | null;
   nivel_estresse: number | null;
   observacoes: string | null;
+  /** Sinalizadores de segurança clínica: quando true, o motor de cálculo
+   *  nunca aplica déficit/superávit automático (ver lib/nutrition/calculations.ts). */
+  gestante: boolean;
+  lactante: boolean;
+  historico_transtorno_alimentar: boolean;
+  /** Explicação de qualquer ajuste de segurança aplicado à meta calórica. */
+  ajuste_seguranca: string | null;
   imc: number;
   classificacao_imc: string;
   tmb: number;
@@ -95,6 +102,10 @@ export interface Receita {
   fibra_g: number;
   imagem_url: string | null;
   favorito: boolean;
+  /** Vocabulário fechado: lactose, gluten, amendoim, ovo, castanhas, peixe, frutos_do_mar, soja. */
+  alergenos: string[];
+  /** Vocabulário fechado: vegetariano, vegano, sem_gluten, sem_lactose. */
+  dietas_atendidas: string[];
   criado_em: string;
   atualizado_em: string;
 }

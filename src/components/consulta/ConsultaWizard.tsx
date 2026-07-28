@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp } from "lucide-react";
+import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Select, Textarea } from "@/components/ui/Input";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -28,6 +28,9 @@ interface RespostasConsulta {
   qualidade_sono: string;
   nivel_estresse: string;
   observacoes: string;
+  gestante: boolean;
+  lactante: boolean;
+  historico_transtorno_alimentar: boolean;
 }
 
 const INICIAL: RespostasConsulta = {
@@ -47,6 +50,9 @@ const INICIAL: RespostasConsulta = {
   qualidade_sono: "3",
   nivel_estresse: "3",
   observacoes: "",
+  gestante: false,
+  lactante: false,
+  historico_transtorno_alimentar: false,
 };
 
 const TOTAL_ETAPAS = 5;
@@ -79,6 +85,11 @@ function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsul
     qualidade_sono: anterior.qualidade_sono != null ? String(anterior.qualidade_sono) : "3",
     nivel_estresse: anterior.nivel_estresse != null ? String(anterior.nivel_estresse) : "3",
     observacoes: "",
+    // Sinalizadores de segurança não carregam automaticamente — a condição
+    // pode ter mudado desde a última consulta, então pedimos de novo.
+    gestante: false,
+    lactante: false,
+    historico_transtorno_alimentar: false,
   };
 }
 
@@ -88,7 +99,9 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
   const [etapa, setEtapa] = useState(1);
   const [respostas, setRespostas] = useState<RespostasConsulta>(() => estadoInicialDe(avaliacaoAnterior));
   const [enviando, setEnviando] = useState(false);
-  const [resultadoFinal, setResultadoFinal] = useState<null | { observacoes: string }>(null);
+  const [resultadoFinal, setResultadoFinal] = useState<null | { observacoes: string; avisoSeguranca: string | null }>(
+    null
+  );
 
   function atualizar<K extends keyof RespostasConsulta>(campo: K, valor: RespostasConsulta[K]) {
     setRespostas((prev) => ({ ...prev, [campo]: valor }));
@@ -107,6 +120,9 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
         genero: respostas.genero,
         nivelAtividade: respostas.nivel_atividade,
         objetivo: respostas.objetivo,
+        gestante: respostas.gestante,
+        lactante: respostas.lactante,
+        historicoTranstornoAlimentar: respostas.historico_transtorno_alimentar,
       });
     } catch {
       return null;
@@ -164,13 +180,16 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
           qualidade_sono: Number(respostas.qualidade_sono),
           nivel_estresse: Number(respostas.nivel_estresse),
           observacoes: respostas.observacoes || null,
+          gestante: respostas.gestante,
+          lactante: respostas.lactante,
+          historico_transtorno_alimentar: respostas.historico_transtorno_alimentar,
         }),
       });
 
       const dados = await resposta.json();
       if (!resposta.ok) throw new Error(dados.erro ?? "Erro ao gerar o plano.");
 
-      setResultadoFinal({ observacoes: dados.observacoesNutricionista });
+      setResultadoFinal({ observacoes: dados.observacoesNutricionista, avisoSeguranca: dados.avisoSeguranca ?? null });
       toast.sucesso("Seu plano alimentar foi gerado com sucesso!");
     } catch (erro) {
       toast.erro(erro instanceof Error ? erro.message : "Erro inesperado.");
@@ -208,6 +227,12 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
               <Metrica label="TDEE" valor={`${preview.tdee} kcal`} />
               <Metrica label="Meta calórica" valor={`${preview.metaCalorica} kcal`} />
             </div>
+          )}
+          {resultadoFinal.avisoSeguranca && (
+            <p className="mt-4 flex items-start gap-2 rounded-xl bg-warning-500/10 px-4 py-3 text-left text-sm text-foreground">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-500" />
+              {resultadoFinal.avisoSeguranca}
+            </p>
           )}
           <p className="mt-5 text-sm text-muted">{resultadoFinal.observacoes}</p>
           {retorno && (
@@ -378,6 +403,38 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
                     ))}
                   </Select>
                 </div>
+                <div className="rounded-xl border border-border bg-black/[0.02] p-4">
+                  <p className="mb-3 text-sm font-medium text-foreground">
+                    Alguma dessas situações se aplica a você agora?
+                  </p>
+                  <div className="space-y-2.5">
+                    <CheckboxSeguranca
+                      id="gestante"
+                      rotulo="Estou grávida"
+                      marcado={respostas.gestante}
+                      aoAlterar={(v) => atualizar("gestante", v)}
+                    />
+                    <CheckboxSeguranca
+                      id="lactante"
+                      rotulo="Estou amamentando"
+                      marcado={respostas.lactante}
+                      aoAlterar={(v) => atualizar("lactante", v)}
+                    />
+                    <CheckboxSeguranca
+                      id="historico-ta"
+                      rotulo="Tenho ou já tive transtorno alimentar"
+                      marcado={respostas.historico_transtorno_alimentar}
+                      aoAlterar={(v) => atualizar("historico_transtorno_alimentar", v)}
+                    />
+                  </div>
+                  {(respostas.gestante || respostas.lactante || respostas.historico_transtorno_alimentar) && (
+                    <p className="mt-3 flex items-start gap-2 text-xs text-muted">
+                      <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-500" />
+                      Por segurança, seu plano será calculado sem déficit ou superávit calórico (apenas manutenção),
+                      e recomendamos fortemente acompanhamento com um nutricionista licenciado nesta fase.
+                    </p>
+                  )}
+                </div>
               </div>
             </Etapa>
           )}
@@ -396,6 +453,12 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
                   <Metrica label="Meta calórica" valor={`${preview.metaCalorica} kcal`} />
                   <Metrica label="Água/dia" valor={`${(preview.aguaMl / 1000).toFixed(1)} L`} />
                 </div>
+              )}
+              {preview?.avisoSeguranca && (
+                <p className="mt-4 flex items-start gap-2 rounded-xl bg-warning-500/10 px-4 py-3 text-sm text-foreground">
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-500" />
+                  {preview.avisoSeguranca}
+                </p>
               )}
             </Etapa>
           )}
@@ -439,6 +502,31 @@ function Etapa({ titulo, descricao, children }: { titulo: string; descricao: str
       <p className="mt-1 text-sm text-muted">{descricao}</p>
       <div className="mt-5">{children}</div>
     </div>
+  );
+}
+
+function CheckboxSeguranca({
+  id,
+  rotulo,
+  marcado,
+  aoAlterar,
+}: {
+  id: string;
+  rotulo: string;
+  marcado: boolean;
+  aoAlterar: (valor: boolean) => void;
+}) {
+  return (
+    <label htmlFor={id} className="flex cursor-pointer items-center gap-2.5 text-sm text-foreground">
+      <input
+        id={id}
+        type="checkbox"
+        checked={marcado}
+        onChange={(e) => aoAlterar(e.target.checked)}
+        className="h-4 w-4 rounded border-border text-brand-500 focus:ring-2 focus:ring-brand-400"
+      />
+      {rotulo}
+    </label>
   );
 }
 

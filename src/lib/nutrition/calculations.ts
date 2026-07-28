@@ -64,23 +64,91 @@ export function calcularTDEE(tmb: number, nivelAtividade: NivelAtividade): numbe
 }
 
 /**
+ * Piso calórico mínimo de segurança: um déficit nunca deve levar a meta
+ * abaixo desses valores sem acompanhamento presencial (referência clínica
+ * usual: ~1200 kcal/dia para mulheres, ~1500 kcal/dia para homens).
+ */
+const PISO_CALORICO: Record<Genero, number> = {
+  feminino: 1200,
+  masculino: 1500,
+  outro: 1350,
+};
+
+export interface CondicaoEspecial {
+  gestante?: boolean;
+  lactante?: boolean;
+  historicoTranstornoAlimentar?: boolean;
+}
+
+export interface MetaCaloricaResultado {
+  valor: number;
+  /** Explicação do ajuste de segurança aplicado, se houver (null = nenhum ajuste). */
+  avisoSeguranca: string | null;
+}
+
+/**
  * Ajuste calórico por objetivo. Déficit/superávit conservadores e
  * seguros (evitando restrições agressivas), alinhados a diretrizes de
  * emagrecimento/ganho de massa saudáveis (~0.5-1% do peso corporal/semana).
+ *
+ * Duas travas de segurança, nessa ordem de prioridade:
+ *  1) Gestação, amamentação ou histórico de transtorno alimentar: NUNCA
+ *     aplica déficit/superávit automático, independente do objetivo
+ *     escolhido — usa manutenção (TDEE) e recomenda acompanhamento.
+ *  2) Piso calórico mínimo: mesmo sem condição especial, a meta nunca
+ *     fica abaixo do piso seguro por gênero.
  */
-export function calcularMetaCalorica(tdee: number, objetivo: ObjetivoNutricional): number {
+export function calcularMetaCalorica(
+  tdee: number,
+  objetivo: ObjetivoNutricional,
+  genero: Genero,
+  condicaoEspecial: CondicaoEspecial = {}
+): MetaCaloricaResultado {
+  const { gestante, lactante, historicoTranstornoAlimentar } = condicaoEspecial;
+
+  if (gestante || lactante || historicoTranstornoAlimentar) {
+    const motivo = gestante
+      ? "gravidez"
+      : lactante
+        ? "amamentação"
+        : "histórico de transtorno alimentar";
+    return {
+      valor: tdee,
+      avisoSeguranca:
+        `Por segurança, sua meta foi ajustada para manutenção calórica (sem déficit ou superávit) devido a ${motivo} ` +
+        "informado(a) na consulta. Recomendamos fortemente buscar acompanhamento com um nutricionista licenciado " +
+        "para orientação individualizada nesta fase.",
+    };
+  }
+
+  let bruta: number;
   switch (objetivo) {
     case "emagrecimento":
-      return arredondar(tdee * 0.8, 0); // déficit de ~20%
+      bruta = arredondar(tdee * 0.8, 0); // déficit de ~20%
+      break;
     case "ganho_massa":
-      return arredondar(tdee * 1.12, 0); // superávit de ~12%
+      bruta = arredondar(tdee * 1.12, 0); // superávit de ~12%
+      break;
     case "performance_esportiva":
-      return arredondar(tdee * 1.08, 0);
+      bruta = arredondar(tdee * 1.08, 0);
+      break;
     case "manutencao":
     case "saude_geral":
     default:
-      return tdee;
+      bruta = tdee;
   }
+
+  const piso = PISO_CALORICO[genero];
+  if (bruta < piso) {
+    return {
+      valor: piso,
+      avisoSeguranca:
+        `Sua meta calórica calculada ficou abaixo do mínimo seguro recomendado (${piso} kcal/dia), então ajustamos ` +
+        "para esse piso. Déficits mais agressivos que isso não devem ser feitos sem acompanhamento profissional presencial.",
+    };
+  }
+
+  return { valor: bruta, avisoSeguranca: null };
 }
 
 export interface Macros {
@@ -153,21 +221,30 @@ export interface ResultadoAvaliacao {
   metaCalorica: number;
   macros: Macros;
   aguaMl: number;
+  /** Explicação de qualquer ajuste de segurança aplicado à meta calórica (null = nenhum). */
+  avisoSeguranca: string | null;
 }
 
 /** Executa a bateria completa de cálculos a partir dos dados da consulta. */
 export function gerarResultadoAvaliacao(
-  dados: DadosAntropometricos & { nivelAtividade: NivelAtividade; objetivo: ObjetivoNutricional }
+  dados: DadosAntropometricos & {
+    nivelAtividade: NivelAtividade;
+    objetivo: ObjetivoNutricional;
+  } & CondicaoEspecial
 ): ResultadoAvaliacao {
   const imc = calcularIMC(dados);
   const classificacaoImc = classificarIMC(imc);
   const tmb = calcularTMB(dados);
   const tdee = calcularTDEE(tmb, dados.nivelAtividade);
-  const metaCalorica = calcularMetaCalorica(tdee, dados.objetivo);
+  const { valor: metaCalorica, avisoSeguranca } = calcularMetaCalorica(tdee, dados.objetivo, dados.genero, {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
+  });
   const macros = calcularMacros(metaCalorica, dados.pesoKg, dados.objetivo);
   const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade);
 
-  return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl };
+  return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl, avisoSeguranca };
 }
 
 function arredondar(valor: number, casas: number): number {

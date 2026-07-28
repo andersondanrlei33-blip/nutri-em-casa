@@ -18,16 +18,16 @@ import {
 import { cn } from "@/lib/utils/cn";
 
 const ITENS_NAV = [
-  { href: "/dashboard", label: "Dashboard", icone: LayoutDashboard },
-  { href: "/consulta", label: "Consulta Nutricional", icone: Stethoscope },
-  { href: "/plano", label: "Plano Alimentar", icone: CalendarDays },
-  { href: "/receitas", label: "Receitas", icone: BookOpen },
-  { href: "/lista-compras", label: "Lista de Compras", icone: ShoppingCart },
-  { href: "/acompanhamento", label: "Acompanhamento", icone: LineChart },
-  { href: "/metas", label: "Metas", icone: Target },
-  { href: "/historico", label: "Histórico", icone: History },
-  { href: "/assinatura", label: "Assinatura", icone: Sparkles },
-  { href: "/configuracoes", label: "Configurações", icone: Settings },
+  { href: "/dashboard", label: "Dashboard", icone: LayoutDashboard, tour: "nav-dashboard" },
+  { href: "/consulta", label: "Consulta Nutricional", icone: Stethoscope, tour: "nav-consulta" },
+  { href: "/plano", label: "Plano Alimentar", icone: CalendarDays, tour: "nav-plano" },
+  { href: "/receitas", label: "Receitas", icone: BookOpen, tour: "nav-receitas" },
+  { href: "/lista-compras", label: "Lista de Compras", icone: ShoppingCart, tour: "nav-lista-compras" },
+  { href: "/acompanhamento", label: "Acompanhamento", icone: LineChart, tour: "nav-acompanhamento" },
+  { href: "/metas", label: "Metas", icone: Target, tour: "nav-metas" },
+  { href: "/historico", label: "Histórico", icone: History, tour: "nav-historico" },
+  { href: "/assinatura", label: "Assinatura", icone: Sparkles, tour: "nav-assinatura" },
+  { href: "/configuracoes", label: "Configurações", icone: Settings, tour: "nav-configuracoes" },
 ];
 
 export function Sidebar({ aberta, aoFechar }: { aberta: boolean; aoFechar: () => void }) {
@@ -57,13 +57,14 @@ export function Sidebar({ aberta, aoFechar }: { aberta: boolean; aoFechar: () =>
         </div>
 
         <nav className="flex flex-col gap-0.5 px-3 py-2">
-          {ITENS_NAV.map(({ href, label, icone: Icone }) => {
+          {ITENS_NAV.map(({ href, label, icone: Icone, tour }) => {
             const ativo = pathname === href || pathname.startsWith(href + "/");
             return (
               <Link
                 key={href}
                 href={href}
                 onClick={aoFechar}
+                data-tour={tour}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                   ativo

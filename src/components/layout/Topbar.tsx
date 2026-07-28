@@ -1,16 +1,18 @@
 "use client";
 
-import { Menu, LogOut, User as UserIcon } from "lucide-react";
+import { Menu, LogOut, User as UserIcon, HelpCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/hooks/useUser";
 import { diasRestantesTrial } from "@/lib/subscriptions/access";
 import { Badge } from "@/components/ui/Badge";
+import { useTourStore } from "@/lib/tour/store";
 
 export function Topbar({ aoAbrirMenu }: { aoAbrirMenu: () => void }) {
   const { perfil, assinatura } = useUser();
   const router = useRouter();
+  const iniciarTour = useTourStore((s) => s.iniciar);
 
   async function sair() {
     const supabase = createClient();
@@ -43,6 +45,14 @@ export function Topbar({ aoAbrirMenu }: { aoAbrirMenu: () => void }) {
             {perfil?.nome || "Meu perfil"}
           </span>
         </Link>
+        <button
+          onClick={iniciarTour}
+          data-tour="botao-ajuda"
+          className="rounded-xl p-2 text-muted hover:bg-black/[0.03] hover:text-brand-600"
+          title="Ver tutorial"
+        >
+          <HelpCircle className="h-4.5 w-4.5" />
+        </button>
         <button
           onClick={sair}
           className="rounded-xl p-2 text-muted hover:bg-black/[0.03] hover:text-danger-500"

@@ -50,6 +50,12 @@ export const PASSOS_TOUR: PassoTour[] = [
       "Registre peso, medidas, água, sono, humor e exercícios — tudo em um só lugar, com abas para cada um.",
   },
   {
+    alvo: "nav-evolucao",
+    titulo: "Evolução",
+    descricao:
+      "Compare uma consulta com outra, veja peso e medidas evoluindo no gráfico e sua consistência nos últimos 30 dias — tudo que a gente revisa numa consulta de retorno.",
+  },
+  {
     alvo: "nav-metas",
     titulo: "Metas",
     descricao: "Defina objetivos (peso, hábitos, o que quiser) e acompanhe seu progresso até chegar lá.",

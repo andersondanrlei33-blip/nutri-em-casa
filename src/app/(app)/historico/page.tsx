@@ -1,9 +1,16 @@
-import { History, Stethoscope, Scale, Dumbbell } from "lucide-react";
+import { History, Stethoscope, Scale, Dumbbell, Ruler, Moon, Smile } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatarData } from "@/lib/utils/date";
-import type { AvaliacaoNutricional, RegistroPeso, RegistroExercicio } from "@/types/domain";
+import type {
+  AvaliacaoNutricional,
+  RegistroPeso,
+  RegistroExercicio,
+  RegistroMedidas,
+  RegistroSono,
+  RegistroHumor,
+} from "@/types/domain";
 
 interface EventoHistorico {
   data: string;
@@ -19,11 +26,15 @@ export default async function HistoricoPage() {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const [{ data: avaliacoes }, { data: pesos }, { data: exercicios }] = await Promise.all([
-    supabase.from("avaliacoes_nutricionais").select("*").eq("usuario_id", user.id).order("criado_em", { ascending: false }),
-    supabase.from("registros_peso").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
-    supabase.from("registros_exercicio").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
-  ]);
+  const [{ data: avaliacoes }, { data: pesos }, { data: exercicios }, { data: medidas }, { data: sono }, { data: humor }] =
+    await Promise.all([
+      supabase.from("avaliacoes_nutricionais").select("*").eq("usuario_id", user.id).order("criado_em", { ascending: false }),
+      supabase.from("registros_peso").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
+      supabase.from("registros_exercicio").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
+      supabase.from("registros_medidas").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
+      supabase.from("registros_sono").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
+      supabase.from("registros_humor").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
+    ]);
 
   const eventos: EventoHistorico[] = [
     ...((avaliacoes ?? []) as AvaliacaoNutricional[]).map((a) => ({
@@ -38,11 +49,36 @@ export default async function HistoricoPage() {
       descricao: `${p.peso_kg} kg${p.observacoes ? ` — ${p.observacoes}` : ""}`,
       icone: Scale,
     })),
+    ...((medidas ?? []) as RegistroMedidas[]).map((m) => ({
+      data: m.data,
+      titulo: "Medidas registradas",
+      descricao:
+        [
+          m.cintura_cm ? `Cintura ${m.cintura_cm}cm` : null,
+          m.quadril_cm ? `Quadril ${m.quadril_cm}cm` : null,
+          m.percentual_gordura ? `${m.percentual_gordura}% gordura` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "Medidas atualizadas",
+      icone: Ruler,
+    })),
     ...((exercicios ?? []) as RegistroExercicio[]).map((ex) => ({
       data: ex.data,
       titulo: "Exercício registrado",
       descricao: `${ex.tipo} · ${ex.duracao_min} min · intensidade ${ex.intensidade}`,
       icone: Dumbbell,
+    })),
+    ...((sono ?? []) as RegistroSono[]).map((s) => ({
+      data: s.data,
+      titulo: "Sono registrado",
+      descricao: `${s.horas}h · qualidade ${s.qualidade}/5`,
+      icone: Moon,
+    })),
+    ...((humor ?? []) as RegistroHumor[]).map((h) => ({
+      data: h.data,
+      titulo: "Humor registrado",
+      descricao: `Humor ${h.humor}/5 · Energia ${h.energia}/5${h.observacoes ? ` — ${h.observacoes}` : ""}`,
+      icone: Smile,
     })),
   ].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
 

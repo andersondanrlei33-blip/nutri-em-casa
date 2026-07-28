@@ -9,4 +9,7 @@ export function getAnthropicClient(): Anthropic | null {
   return client;
 }
 
-export const NUTRI_MODEL = "claude-sonnet-4-5";
+// Haiku: melhor custo-benefício para gerar plano alimentar estruturado e
+// responder dúvidas nutricionais simples — não precisa do raciocínio mais
+// caro do Sonnet/Opus para essas tarefas.
+export const NUTRI_MODEL = "claude-haiku-4-5-20251001";

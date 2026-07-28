@@ -30,8 +30,11 @@ interface RespostasConsulta {
   objetivo: ObjetivoNutricional;
   peso_meta_kg: string;
   restricoes_alimentares: string;
+  confirmou_sem_restricoes: boolean;
   alergias: string;
+  confirmou_sem_alergias: boolean;
   condicoes_saude: CondicaoSaude[];
+  confirmou_sem_condicoes: boolean;
   condicoes_saude_outras: string;
   medicamentos_em_uso: string;
   refeicoes_por_dia: string;
@@ -54,8 +57,11 @@ const INICIAL: RespostasConsulta = {
   objetivo: "emagrecimento",
   peso_meta_kg: "",
   restricoes_alimentares: "",
+  confirmou_sem_restricoes: false,
   alergias: "",
+  confirmou_sem_alergias: false,
   condicoes_saude: [],
+  confirmou_sem_condicoes: false,
   condicoes_saude_outras: "",
   medicamentos_em_uso: "",
   refeicoes_por_dia: "4",
@@ -91,8 +97,11 @@ function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsul
     objetivo: anterior.objetivo,
     peso_meta_kg: anterior.peso_meta_kg != null ? String(anterior.peso_meta_kg) : "",
     restricoes_alimentares: anterior.restricoes_alimentares.join(", "),
+    confirmou_sem_restricoes: false,
     alergias: anterior.alergias.join(", "),
+    confirmou_sem_alergias: false,
     condicoes_saude: anterior.condicoes_saude,
+    confirmou_sem_condicoes: false,
     condicoes_saude_outras: anterior.condicoes_saude_outras ?? "",
     medicamentos_em_uso: anterior.medicamentos_em_uso.join(", "),
     refeicoes_por_dia: String(anterior.refeicoes_por_dia),
@@ -127,6 +136,7 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
       condicoes_saude: prev.condicoes_saude.includes(condicao)
         ? prev.condicoes_saude.filter((c) => c !== condicao)
         : [...prev.condicoes_saude, condicao],
+      confirmou_sem_condicoes: false,
     }));
   }
 
@@ -165,6 +175,19 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
     if (etapa === 1) {
       if (!respostas.peso_kg || !respostas.altura_cm || !respostas.idade) {
         return "Preencha peso, altura e idade para continuar.";
+      }
+    }
+    if (etapa === 3) {
+      if (!respostas.restricoes_alimentares.trim() && !respostas.confirmou_sem_restricoes) {
+        return "Informe suas restrições alimentares ou confirme que não tem nenhuma.";
+      }
+      if (!respostas.alergias.trim() && !respostas.confirmou_sem_alergias) {
+        return "Informe suas alergias ou confirme que não tem nenhuma.";
+      }
+    }
+    if (etapa === 4) {
+      if (respostas.condicoes_saude.length === 0 && !respostas.confirmou_sem_condicoes) {
+        return "Selecione suas condições de saúde ou confirme que não tem nenhuma.";
       }
     }
     return null;
@@ -397,11 +420,63 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="restricoes">Restrições alimentares (separadas por vírgula)</Label>
-                  <Input id="restricoes" placeholder="Vegetariano, sem lactose..." value={respostas.restricoes_alimentares} onChange={(e) => atualizar("restricoes_alimentares", e.target.value)} />
+                  <Input
+                    id="restricoes"
+                    placeholder="Vegetariano, sem lactose..."
+                    value={respostas.restricoes_alimentares}
+                    onChange={(e) => {
+                      const valor = e.target.value;
+                      setRespostas((prev) => ({
+                        ...prev,
+                        restricoes_alimentares: valor,
+                        confirmou_sem_restricoes: valor.trim() ? false : prev.confirmou_sem_restricoes,
+                      }));
+                    }}
+                  />
+                  <div className="mt-2">
+                    <CheckboxSeguranca
+                      id="sem-restricoes"
+                      rotulo="Não tenho nenhuma restrição alimentar"
+                      marcado={respostas.confirmou_sem_restricoes}
+                      aoAlterar={(v) =>
+                        setRespostas((prev) => ({
+                          ...prev,
+                          confirmou_sem_restricoes: v,
+                          restricoes_alimentares: v ? "" : prev.restricoes_alimentares,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="alergias">Alergias alimentares</Label>
-                  <Input id="alergias" placeholder="Amendoim, frutos do mar..." value={respostas.alergias} onChange={(e) => atualizar("alergias", e.target.value)} />
+                  <Input
+                    id="alergias"
+                    placeholder="Amendoim, frutos do mar..."
+                    value={respostas.alergias}
+                    onChange={(e) => {
+                      const valor = e.target.value;
+                      setRespostas((prev) => ({
+                        ...prev,
+                        alergias: valor,
+                        confirmou_sem_alergias: valor.trim() ? false : prev.confirmou_sem_alergias,
+                      }));
+                    }}
+                  />
+                  <div className="mt-2">
+                    <CheckboxSeguranca
+                      id="sem-alergias"
+                      rotulo="Não tenho nenhuma alergia alimentar"
+                      marcado={respostas.confirmou_sem_alergias}
+                      aoAlterar={(v) =>
+                        setRespostas((prev) => ({
+                          ...prev,
+                          confirmou_sem_alergias: v,
+                          alergias: v ? "" : prev.alergias,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="evitados">Alimentos que você não gosta</Label>
@@ -430,6 +505,20 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
                         aoAlterar={() => alternarCondicaoSaude(opcao.valor)}
                       />
                     ))}
+                  </div>
+                  <div className="mt-2">
+                    <CheckboxSeguranca
+                      id="sem-condicoes"
+                      rotulo="Nenhuma condição de saúde relevante"
+                      marcado={respostas.confirmou_sem_condicoes}
+                      aoAlterar={(v) =>
+                        setRespostas((prev) => ({
+                          ...prev,
+                          confirmou_sem_condicoes: v,
+                          condicoes_saude: v ? [] : prev.condicoes_saude,
+                        }))
+                      }
+                    />
                   </div>
                 </div>
                 <div>

@@ -7,7 +7,7 @@ import { WeightChart } from "@/components/dashboard/WeightChart";
 import { TodayMeals } from "@/components/dashboard/TodayMeals";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
-import { hojeISO, formatarDataLonga, DIAS_SEMANA } from "@/lib/utils/date";
+import { hojeISO, formatarDataLonga, diasDesde, DIAS_SEMANA } from "@/lib/utils/date";
 import type { AvaliacaoNutricional, RefeicaoPlano, RegistroPeso, RegistroAgua } from "@/types/domain";
 
 export default async function DashboardPage() {
@@ -77,12 +77,35 @@ export default async function DashboardPage() {
     );
   }
 
+  const diasDesdeConsulta = diasDesde(av.criado_em);
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold capitalize text-foreground">{formatarDataLonga(hoje)}</h1>
         <p className="mt-1 text-sm text-muted">Aqui está o seu resumo de hoje.</p>
       </div>
+
+      {diasDesdeConsulta >= 15 && (
+        <Card className="border-brand-200 bg-brand-50">
+          <CardContent className="flex flex-col items-start justify-between gap-3 py-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-brand-600">
+                <Stethoscope className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Hora de uma consulta de retorno?</p>
+                <p className="text-xs text-muted">
+                  Já se passaram {diasDesdeConsulta} dias desde sua última consulta. Atualize seu peso e progresso para reajustar seu plano.
+                </p>
+              </div>
+            </div>
+            <Link href="/consulta" className="shrink-0">
+              <Button variante="secundaria">Fazer consulta de retorno</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard

@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Stethoscope } from "lucide-react";
+import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Select, Textarea } from "@/components/ui/Input";
 import { Card, CardContent } from "@/components/ui/Card";
 import { toast } from "@/components/ui/Toast";
 import { gerarResultadoAvaliacao } from "@/lib/nutrition/calculations";
-import type { Genero, NivelAtividade, ObjetivoNutricional } from "@/types/domain";
+import { formatarData, diasDesde } from "@/lib/utils/date";
+import type { AvaliacaoNutricional, Genero, NivelAtividade, ObjetivoNutricional } from "@/types/domain";
 
 interface RespostasConsulta {
   peso_kg: string;
@@ -57,10 +58,35 @@ function paraLista(texto: string): string[] {
     .filter(Boolean);
 }
 
-export function ConsultaWizard() {
+/** Numa consulta de retorno, pré-preenche o formulário com a última avaliação —
+ *  o usuário só precisa atualizar o que mudou, não redigitar tudo do zero. */
+function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsulta {
+  if (!anterior) return INICIAL;
+  return {
+    peso_kg: String(anterior.peso_kg),
+    altura_cm: String(anterior.altura_cm),
+    idade: String(anterior.idade),
+    genero: anterior.genero,
+    nivel_atividade: anterior.nivel_atividade,
+    objetivo: anterior.objetivo,
+    peso_meta_kg: anterior.peso_meta_kg != null ? String(anterior.peso_meta_kg) : "",
+    restricoes_alimentares: anterior.restricoes_alimentares.join(", "),
+    alergias: anterior.alergias.join(", "),
+    condicoes_saude: anterior.condicoes_saude.join(", "),
+    refeicoes_por_dia: String(anterior.refeicoes_por_dia),
+    preferencias_alimentares: anterior.preferencias_alimentares.join(", "),
+    alimentos_evitados: anterior.alimentos_evitados.join(", "),
+    qualidade_sono: anterior.qualidade_sono != null ? String(anterior.qualidade_sono) : "3",
+    nivel_estresse: anterior.nivel_estresse != null ? String(anterior.nivel_estresse) : "3",
+    observacoes: "",
+  };
+}
+
+export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: AvaliacaoNutricional | null }) {
   const router = useRouter();
+  const retorno = Boolean(avaliacaoAnterior);
   const [etapa, setEtapa] = useState(1);
-  const [respostas, setRespostas] = useState<RespostasConsulta>(INICIAL);
+  const [respostas, setRespostas] = useState<RespostasConsulta>(() => estadoInicialDe(avaliacaoAnterior));
   const [enviando, setEnviando] = useState(false);
   const [resultadoFinal, setResultadoFinal] = useState<null | { observacoes: string }>(null);
 
@@ -86,6 +112,12 @@ export function ConsultaWizard() {
       return null;
     }
   }, [respostas, podeVerPreview]);
+
+  const diffPeso = useMemo(() => {
+    if (!avaliacaoAnterior || !Number(respostas.peso_kg)) return null;
+    const diferenca = Number(respostas.peso_kg) - avaliacaoAnterior.peso_kg;
+    return Math.round(diferenca * 10) / 10;
+  }, [avaliacaoAnterior, respostas.peso_kg]);
 
   function validarEtapaAtual(): string | null {
     if (etapa === 1) {
@@ -154,7 +186,21 @@ export function ConsultaWizard() {
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
             <Stethoscope className="h-6 w-6 text-brand-600" />
           </div>
-          <h2 className="text-lg font-semibold text-foreground">Consulta concluída!</h2>
+          <h2 className="text-lg font-semibold text-foreground">
+            {retorno ? "Consulta de retorno concluída!" : "Consulta concluída!"}
+          </h2>
+          {retorno && diffPeso !== null && diffPeso !== 0 && (
+            <p
+              className={`mt-2 inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-medium ${
+                diffPeso < 0 ? "bg-success-500/10 text-success-500" : "bg-brand-50 text-brand-700"
+              }`}
+            >
+              {diffPeso < 0 ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+              {diffPeso < 0
+                ? `Você perdeu ${Math.abs(diffPeso)} kg desde a última consulta`
+                : `Você ganhou ${diffPeso} kg desde a última consulta`}
+            </p>
+          )}
           {preview && (
             <div className="mt-4 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
               <Metrica label="IMC" valor={preview.imc.toString()} sub={preview.classificacaoImc} />
@@ -164,6 +210,11 @@ export function ConsultaWizard() {
             </div>
           )}
           <p className="mt-5 text-sm text-muted">{resultadoFinal.observacoes}</p>
+          {retorno && (
+            <p className="mt-2 text-xs text-muted">
+              Seu plano alimentar anterior foi substituído por um novo, ajustado a esses dados.
+            </p>
+          )}
           <Button className="mt-6" onClick={() => router.push("/plano")}>
             Ver meu plano alimentar
           </Button>
@@ -186,7 +237,21 @@ export function ConsultaWizard() {
       <Card>
         <CardContent className="py-8">
           {etapa === 1 && (
-            <Etapa titulo="Dados básicos" descricao="Precisamos disso para calcular seu IMC, TMB e TDEE.">
+            <Etapa
+              titulo="Dados básicos"
+              descricao={
+                retorno
+                  ? "Atualize seu peso e o que mais tiver mudado desde a última consulta."
+                  : "Precisamos disso para calcular seu IMC, TMB e TDEE."
+              }
+            >
+              {retorno && avaliacaoAnterior && (
+                <p className="mb-4 rounded-xl bg-black/[0.03] px-4 py-3 text-sm text-muted">
+                  Última consulta em <strong className="text-foreground">{formatarData(avaliacaoAnterior.criado_em)}</strong>{" "}
+                  ({diasDesde(avaliacaoAnterior.criado_em)} dias atrás) — peso registrado na época:{" "}
+                  <strong className="text-foreground">{avaliacaoAnterior.peso_kg} kg</strong>.
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="peso">Peso atual (kg)</Label>
@@ -209,6 +274,16 @@ export function ConsultaWizard() {
                   </Select>
                 </div>
               </div>
+              {diffPeso !== null && diffPeso !== 0 && (
+                <p
+                  className={`mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium ${
+                    diffPeso < 0 ? "bg-success-500/10 text-success-500" : "bg-brand-50 text-brand-700"
+                  }`}
+                >
+                  {diffPeso < 0 ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+                  {diffPeso < 0 ? `${Math.abs(diffPeso)} kg a menos` : `${diffPeso} kg a mais`} desde a última consulta
+                </p>
+              )}
               {preview && (
                 <p className="mt-4 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-700">
                   Prévia: IMC {preview.imc} ({preview.classificacaoImc})
@@ -327,6 +402,12 @@ export function ConsultaWizard() {
         </CardContent>
       </Card>
 
+      {etapa === TOTAL_ETAPAS && retorno && (
+        <p className="mt-4 text-center text-xs text-muted">
+          Ao concluir, seu plano alimentar atual será substituído por um novo, ajustado a esses dados.
+        </p>
+      )}
+
       <div className="mt-5 flex items-center justify-between">
         <Button variante="secundaria" onClick={voltar} disabled={etapa === 1}>
           <ChevronLeft className="h-4 w-4" /> Voltar
@@ -337,7 +418,13 @@ export function ConsultaWizard() {
           </Button>
         ) : (
           <Button onClick={finalizarConsulta} carregando={enviando}>
-            {enviando ? "Gerando seu plano..." : "Concluir consulta e gerar plano"}
+            {enviando
+              ? retorno
+                ? "Atualizando seu plano..."
+                : "Gerando seu plano..."
+              : retorno
+                ? "Concluir e atualizar meu plano"
+                : "Concluir consulta e gerar plano"}
           </Button>
         )}
       </div>

@@ -17,6 +17,13 @@ export function isHoje(data: string | Date) {
   return isTodayFns(d);
 }
 
+/** Quantos dias inteiros já se passaram desde a data informada. */
+export function diasDesde(data: string | Date) {
+  const d = typeof data === "string" ? parseISO(data) : data;
+  const diffMs = Date.now() - d.getTime();
+  return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+}
+
 export const DIAS_SEMANA = [
   "segunda",
   "terca",

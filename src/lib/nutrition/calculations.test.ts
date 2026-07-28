@@ -15,6 +15,9 @@ import {
   calcularMetaCalorica,
   calcularMacros,
   calcularAguaRecomendada,
+  avaliarCondicoesSaude,
+  avaliarSonoEEstresse,
+  calcularRCQ,
   gerarResultadoAvaliacao,
 } from "./calculations.ts";
 
@@ -107,12 +110,61 @@ test("gerarResultadoAvaliacao integra todo o pipeline sem erros", () => {
   assert.ok(resultado.metaCalorica < resultado.tdee);
   assert.ok(resultado.macros.proteinaG > 0);
   assert.ok(resultado.aguaMl > 0);
+  assert.deepEqual(resultado.avisos, []);
 });
 
 test("Rejeita peso/altura inválidos", () => {
   assert.throws(() =>
     calcularIMC({ pesoKg: 0, alturaCm: 175, idade: 30, genero: "masculino" })
   );
+});
+
+test("Doença renal limita a proteína e gera aviso", () => {
+  const { avisos, limiteProteinaPorKg } = avaliarCondicoesSaude(["doenca_renal"]);
+  assert.equal(limiteProteinaPorKg, 1.0);
+  assert.equal(avisos.length, 1);
+
+  const macrosSemLimite = calcularMacros(2000, 70, "emagrecimento");
+  const macrosComLimite = calcularMacros(2000, 70, "emagrecimento", limiteProteinaPorKg);
+  assert.ok(macrosComLimite.proteinaG < macrosSemLimite.proteinaG);
+  assert.equal(macrosComLimite.proteinaG, 70); // 1.0g/kg * 70kg
+});
+
+test("Diabetes e hipertensão geram avisos mas não limitam proteína", () => {
+  const { avisos, limiteProteinaPorKg } = avaliarCondicoesSaude(["diabetes_tipo2", "hipertensao"]);
+  assert.equal(limiteProteinaPorKg, null);
+  assert.equal(avisos.length, 2);
+});
+
+test("Sono ruim e estresse alto geram avisos; sono/estresse ok não gera nada", () => {
+  assert.equal(avaliarSonoEEstresse(1, 1).length, 1); // só sono ruim
+  assert.equal(avaliarSonoEEstresse(5, 5).length, 1); // só estresse alto
+  assert.equal(avaliarSonoEEstresse(1, 5).length, 2); // os dois
+  assert.equal(avaliarSonoEEstresse(3, 3).length, 0); // nenhum
+});
+
+test("gerarResultadoAvaliacao combina avisos de condição de saúde e sono", () => {
+  const resultado = gerarResultadoAvaliacao({
+    pesoKg: 70,
+    alturaCm: 165,
+    idade: 40,
+    genero: "feminino",
+    nivelAtividade: "leve",
+    objetivo: "emagrecimento",
+    condicoesSaude: ["doenca_renal"],
+    qualidadeSono: 1,
+    nivelEstresse: 3,
+  });
+  assert.equal(resultado.avisos.length, 2); // doença renal + sono ruim
+  assert.ok(resultado.macros.proteinaG <= 70); // 1.0g/kg respeitado
+});
+
+test("RCQ classifica risco por gênero", () => {
+  const mulherRisco = calcularRCQ(90, 100, "feminino"); // 0.9 >= 0.85
+  assert.equal(mulherRisco.classificacao, "Risco aumentado");
+
+  const homemBaixo = calcularRCQ(80, 100, "masculino"); // 0.8 < 0.90
+  assert.equal(homemBaixo.classificacao, "Risco baixo");
 });
 
 console.log(`\n${passed} testes passaram.`);

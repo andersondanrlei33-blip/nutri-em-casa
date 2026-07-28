@@ -14,7 +14,7 @@
  * (geração oficial do plano, salva no banco).
  */
 
-import type { Genero, NivelAtividade, ObjetivoNutricional } from "../../types/domain.ts";
+import type { CondicaoSaude, Genero, NivelAtividade, ObjetivoNutricional } from "../../types/domain.ts";
 
 export interface DadosAntropometricos {
   pesoKg: number;
@@ -162,11 +162,15 @@ export interface Macros {
  * Distribuição de macros baseada no objetivo e no peso corporal
  * (proteína/gordura por kg, restante em carboidrato), respeitando os
  * mínimos recomendados por diretrizes de nutrição esportiva/clínica.
+ *
+ * `limiteProteinaPorKg` permite capar a proteína por uma condição de saúde
+ * (ex: doença renal) independente do que o objetivo pediria.
  */
 export function calcularMacros(
   metaCalorica: number,
   pesoKg: number,
-  objetivo: ObjetivoNutricional
+  objetivo: ObjetivoNutricional,
+  limiteProteinaPorKg: number | null = null
 ): Macros {
   let proteinaPorKg: number;
   let gorduraPorKg: number;
@@ -187,6 +191,10 @@ export function calcularMacros(
     default:
       proteinaPorKg = 1.4;
       gorduraPorKg = 0.9;
+  }
+
+  if (limiteProteinaPorKg != null) {
+    proteinaPorKg = Math.min(proteinaPorKg, limiteProteinaPorKg);
   }
 
   const proteinaG = arredondar(pesoKg * proteinaPorKg, 0);
@@ -213,6 +221,97 @@ export function calcularAguaRecomendada(pesoKg: number, nivelAtividade: NivelAti
   return arredondar(base + extra, 0);
 }
 
+/**
+ * Avalia as condições de saúde crônicas informadas (lista fechada — não
+ * texto livre) e retorna: (a) um limite de proteína/kg quando a condição
+ * exige isso por segurança, e (b) recomendações em texto. Deliberadamente
+ * conservador: quando não temos como calcular um ajuste preciso (ex:
+ * tireoide, diabetes), não fingimos precisão — recomendamos acompanhamento
+ * em vez de adivinhar um número.
+ */
+export function avaliarCondicoesSaude(condicoes: CondicaoSaude[]): {
+  avisos: string[];
+  limiteProteinaPorKg: number | null;
+} {
+  const avisos: string[] = [];
+  let limiteProteinaPorKg: number | null = null;
+
+  if (condicoes.includes("doenca_renal")) {
+    limiteProteinaPorKg = 1.0;
+    avisos.push(
+      "Como você informou uma condição renal, ajustamos sua proteína para um valor mais conservador. O ideal é " +
+        "que a quantidade exata seja definida por um nutricionista ou nefrologista com base nos seus exames."
+    );
+  }
+  if (condicoes.includes("diabetes_tipo1") || condicoes.includes("diabetes_tipo2")) {
+    avisos.push(
+      "Como você informou diabetes, é importante monitorar a distribuição de carboidratos ao longo do dia e sua " +
+        "glicemia com acompanhamento profissional — os valores aqui são uma referência geral, não uma prescrição individualizada."
+    );
+  }
+  if (condicoes.includes("hipertensao")) {
+    avisos.push(
+      "Como você informou hipertensão, modere o sódio (sal, industrializados, temperos prontos) e, se possível, " +
+        "acompanhe sua pressão regularmente."
+    );
+  }
+  if (condicoes.includes("hipotireoidismo") || condicoes.includes("hipertireoidismo")) {
+    avisos.push(
+      "Alterações de tireoide afetam seu metabolismo de um jeito que este cálculo não mede sozinho — o ideal é " +
+        "ajustar sua meta calórica com acompanhamento profissional, principalmente se notar resultados muito diferentes do esperado."
+    );
+  }
+  if (condicoes.includes("colesterol_alto")) {
+    avisos.push(
+      "Como você informou colesterol alto, priorize gorduras insaturadas (azeite, castanhas, peixes) e modere frituras e gorduras saturadas."
+    );
+  }
+
+  return { avisos, limiteProteinaPorKg };
+}
+
+/** Recomendações a partir de sono/estresse informados na consulta — dado que
+ *  antes era coletado e nunca usado. Não altera nenhum cálculo, só orienta. */
+export function avaliarSonoEEstresse(qualidadeSono: number | null, nivelEstresse: number | null): string[] {
+  const avisos: string[] = [];
+  if (qualidadeSono != null && qualidadeSono <= 2) {
+    avisos.push(
+      "Sua qualidade de sono está baixa. Sono ruim está associado a mais fome ao longo do dia e mais dificuldade " +
+        "para perder peso — melhorar isso pode ajudar tanto quanto ajustar a dieta."
+    );
+  }
+  if (nivelEstresse != null && nivelEstresse >= 4) {
+    avisos.push(
+      "Seu nível de estresse está alto. Estresse crônico eleva o cortisol e pode dificultar tanto o emagrecimento " +
+        "quanto o ganho de massa — vale cuidar disso junto com a alimentação."
+    );
+  }
+  return avisos;
+}
+
+/**
+ * Relação cintura-quadril (RCQ) — indicador clássico de risco cardiovascular
+ * quando as duas medidas estão disponíveis. Referências de corte (OMS):
+ * mulher ≥0.85 e homem ≥0.90 já indicam risco aumentado.
+ */
+export function calcularRCQ(
+  cinturaCm: number,
+  quadrilCm: number,
+  genero: Genero
+): { valor: number; classificacao: string } {
+  const valor = arredondar(cinturaCm / quadrilCm, 2);
+
+  if (genero === "masculino") {
+    return { valor, classificacao: valor >= 0.9 ? "Risco aumentado" : "Risco baixo" };
+  }
+  if (genero === "feminino") {
+    return { valor, classificacao: valor >= 0.85 ? "Risco aumentado" : "Risco baixo" };
+  }
+  // Sem um corte padronizado para "outro" — mostramos o número com um corte
+  // conservador (média dos dois) em vez de inventar uma referência específica.
+  return { valor, classificacao: valor >= 0.875 ? "Risco possivelmente aumentado" : "Risco baixo" };
+}
+
 export interface ResultadoAvaliacao {
   imc: number;
   classificacaoImc: string;
@@ -221,8 +320,9 @@ export interface ResultadoAvaliacao {
   metaCalorica: number;
   macros: Macros;
   aguaMl: number;
-  /** Explicação de qualquer ajuste de segurança aplicado à meta calórica (null = nenhum). */
-  avisoSeguranca: string | null;
+  /** Todos os avisos/recomendações da consulta: segurança calórica, condições
+   *  de saúde informadas e sono/estresse — nessa ordem de prioridade. */
+  avisos: string[];
 }
 
 /** Executa a bateria completa de cálculos a partir dos dados da consulta. */
@@ -230,6 +330,9 @@ export function gerarResultadoAvaliacao(
   dados: DadosAntropometricos & {
     nivelAtividade: NivelAtividade;
     objetivo: ObjetivoNutricional;
+    condicoesSaude?: CondicaoSaude[];
+    qualidadeSono?: number | null;
+    nivelEstresse?: number | null;
   } & CondicaoEspecial
 ): ResultadoAvaliacao {
   const imc = calcularIMC(dados);
@@ -241,10 +344,15 @@ export function gerarResultadoAvaliacao(
     lactante: dados.lactante,
     historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
   });
-  const macros = calcularMacros(metaCalorica, dados.pesoKg, dados.objetivo);
-  const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade);
 
-  return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl, avisoSeguranca };
+  const { avisos: avisosCondicoes, limiteProteinaPorKg } = avaliarCondicoesSaude(dados.condicoesSaude ?? []);
+  const macros = calcularMacros(metaCalorica, dados.pesoKg, dados.objetivo, limiteProteinaPorKg);
+  const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade);
+  const avisosSono = avaliarSonoEEstresse(dados.qualidadeSono ?? null, dados.nivelEstresse ?? null);
+
+  const avisos = [avisoSeguranca, ...avisosCondicoes, ...avisosSono].filter((a): a is string => Boolean(a));
+
+  return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl, avisos };
 }
 
 function arredondar(valor: number, casas: number): number {

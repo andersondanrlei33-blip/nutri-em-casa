@@ -9,7 +9,17 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { toast } from "@/components/ui/Toast";
 import { gerarResultadoAvaliacao } from "@/lib/nutrition/calculations";
 import { formatarData, diasDesde } from "@/lib/utils/date";
-import type { AvaliacaoNutricional, Genero, NivelAtividade, ObjetivoNutricional } from "@/types/domain";
+import type { AvaliacaoNutricional, CondicaoSaude, Genero, NivelAtividade, ObjetivoNutricional } from "@/types/domain";
+
+const CONDICOES_SAUDE_OPCOES: { valor: CondicaoSaude; label: string }[] = [
+  { valor: "diabetes_tipo1", label: "Diabetes tipo 1" },
+  { valor: "diabetes_tipo2", label: "Diabetes tipo 2" },
+  { valor: "hipertensao", label: "Hipertensão" },
+  { valor: "doenca_renal", label: "Doença renal" },
+  { valor: "hipotireoidismo", label: "Hipotireoidismo" },
+  { valor: "hipertireoidismo", label: "Hipertireoidismo" },
+  { valor: "colesterol_alto", label: "Colesterol alto" },
+];
 
 interface RespostasConsulta {
   peso_kg: string;
@@ -21,7 +31,9 @@ interface RespostasConsulta {
   peso_meta_kg: string;
   restricoes_alimentares: string;
   alergias: string;
-  condicoes_saude: string;
+  condicoes_saude: CondicaoSaude[];
+  condicoes_saude_outras: string;
+  medicamentos_em_uso: string;
   refeicoes_por_dia: string;
   preferencias_alimentares: string;
   alimentos_evitados: string;
@@ -43,7 +55,9 @@ const INICIAL: RespostasConsulta = {
   peso_meta_kg: "",
   restricoes_alimentares: "",
   alergias: "",
-  condicoes_saude: "",
+  condicoes_saude: [],
+  condicoes_saude_outras: "",
+  medicamentos_em_uso: "",
   refeicoes_por_dia: "4",
   preferencias_alimentares: "",
   alimentos_evitados: "",
@@ -78,7 +92,9 @@ function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsul
     peso_meta_kg: anterior.peso_meta_kg != null ? String(anterior.peso_meta_kg) : "",
     restricoes_alimentares: anterior.restricoes_alimentares.join(", "),
     alergias: anterior.alergias.join(", "),
-    condicoes_saude: anterior.condicoes_saude.join(", "),
+    condicoes_saude: anterior.condicoes_saude,
+    condicoes_saude_outras: anterior.condicoes_saude_outras ?? "",
+    medicamentos_em_uso: anterior.medicamentos_em_uso.join(", "),
     refeicoes_por_dia: String(anterior.refeicoes_por_dia),
     preferencias_alimentares: anterior.preferencias_alimentares.join(", "),
     alimentos_evitados: anterior.alimentos_evitados.join(", "),
@@ -99,12 +115,19 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
   const [etapa, setEtapa] = useState(1);
   const [respostas, setRespostas] = useState<RespostasConsulta>(() => estadoInicialDe(avaliacaoAnterior));
   const [enviando, setEnviando] = useState(false);
-  const [resultadoFinal, setResultadoFinal] = useState<null | { observacoes: string; avisoSeguranca: string | null }>(
-    null
-  );
+  const [resultadoFinal, setResultadoFinal] = useState<null | { observacoes: string; avisos: string[] }>(null);
 
   function atualizar<K extends keyof RespostasConsulta>(campo: K, valor: RespostasConsulta[K]) {
     setRespostas((prev) => ({ ...prev, [campo]: valor }));
+  }
+
+  function alternarCondicaoSaude(condicao: CondicaoSaude) {
+    setRespostas((prev) => ({
+      ...prev,
+      condicoes_saude: prev.condicoes_saude.includes(condicao)
+        ? prev.condicoes_saude.filter((c) => c !== condicao)
+        : [...prev.condicoes_saude, condicao],
+    }));
   }
 
   const podeVerPreview =
@@ -123,6 +146,9 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
         gestante: respostas.gestante,
         lactante: respostas.lactante,
         historicoTranstornoAlimentar: respostas.historico_transtorno_alimentar,
+        condicoesSaude: respostas.condicoes_saude,
+        qualidadeSono: Number(respostas.qualidade_sono),
+        nivelEstresse: Number(respostas.nivel_estresse),
       });
     } catch {
       return null;
@@ -173,7 +199,9 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
           peso_meta_kg: respostas.peso_meta_kg ? Number(respostas.peso_meta_kg) : null,
           restricoes_alimentares: paraLista(respostas.restricoes_alimentares),
           alergias: paraLista(respostas.alergias),
-          condicoes_saude: paraLista(respostas.condicoes_saude),
+          condicoes_saude: respostas.condicoes_saude,
+          condicoes_saude_outras: respostas.condicoes_saude_outras || null,
+          medicamentos_em_uso: paraLista(respostas.medicamentos_em_uso),
           refeicoes_por_dia: Number(respostas.refeicoes_por_dia),
           preferencias_alimentares: paraLista(respostas.preferencias_alimentares),
           alimentos_evitados: paraLista(respostas.alimentos_evitados),
@@ -189,7 +217,7 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
       const dados = await resposta.json();
       if (!resposta.ok) throw new Error(dados.erro ?? "Erro ao gerar o plano.");
 
-      setResultadoFinal({ observacoes: dados.observacoesNutricionista, avisoSeguranca: dados.avisoSeguranca ?? null });
+      setResultadoFinal({ observacoes: dados.observacoesNutricionista, avisos: dados.avisos ?? [] });
       toast.sucesso("Seu plano alimentar foi gerado com sucesso!");
     } catch (erro) {
       toast.erro(erro instanceof Error ? erro.message : "Erro inesperado.");
@@ -228,11 +256,18 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
               <Metrica label="Meta calórica" valor={`${preview.metaCalorica} kcal`} />
             </div>
           )}
-          {resultadoFinal.avisoSeguranca && (
-            <p className="mt-4 flex items-start gap-2 rounded-xl bg-warning-500/10 px-4 py-3 text-left text-sm text-foreground">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-500" />
-              {resultadoFinal.avisoSeguranca}
-            </p>
+          {resultadoFinal.avisos.length > 0 && (
+            <div className="mt-4 space-y-2 text-left">
+              {resultadoFinal.avisos.map((aviso, i) => (
+                <p
+                  key={i}
+                  className="flex items-start gap-2 rounded-xl bg-warning-500/10 px-4 py-3 text-sm text-foreground"
+                >
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-500" />
+                  {aviso}
+                </p>
+              ))}
+            </div>
           )}
           <p className="mt-5 text-sm text-muted">{resultadoFinal.observacoes}</p>
           {retorno && (
@@ -384,8 +419,38 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
             <Etapa titulo="Saúde e bem-estar" descricao="Sono e estresse afetam diretamente seus resultados.">
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="condicoes">Condições de saúde relevantes</Label>
-                  <Input id="condicoes" placeholder="Diabetes, hipertensão..." value={respostas.condicoes_saude} onChange={(e) => atualizar("condicoes_saude", e.target.value)} />
+                  <Label>Condições de saúde relevantes</Label>
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-white p-3 sm:grid-cols-3">
+                    {CONDICOES_SAUDE_OPCOES.map((opcao) => (
+                      <CheckboxSeguranca
+                        key={opcao.valor}
+                        id={`condicao-${opcao.valor}`}
+                        rotulo={opcao.label}
+                        marcado={respostas.condicoes_saude.includes(opcao.valor)}
+                        aoAlterar={() => alternarCondicaoSaude(opcao.valor)}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="condicoes-outras">Outra condição não listada (opcional)</Label>
+                  <Input
+                    id="condicoes-outras"
+                    placeholder="Ex: gastrite, endometriose..."
+                    value={respostas.condicoes_saude_outras}
+                    onChange={(e) => atualizar("condicoes_saude_outras", e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-muted">Fica registrado no seu histórico, mas não ajusta o cálculo automaticamente.</p>
+                </div>
+                <div>
+                  <Label htmlFor="medicamentos">Medicamentos em uso (opcional)</Label>
+                  <Input
+                    id="medicamentos"
+                    placeholder="Ex: metformina, losartana..."
+                    value={respostas.medicamentos_em_uso}
+                    onChange={(e) => atualizar("medicamentos_em_uso", e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-muted">Também fica só registrado — alguns medicamentos afetam peso/apetite, e isso ajuda numa eventual avaliação profissional.</p>
                 </div>
                 <div>
                   <Label htmlFor="sono">Qualidade do sono (1 = ruim, 5 = ótima)</Label>
@@ -454,11 +519,18 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
                   <Metrica label="Água/dia" valor={`${(preview.aguaMl / 1000).toFixed(1)} L`} />
                 </div>
               )}
-              {preview?.avisoSeguranca && (
-                <p className="mt-4 flex items-start gap-2 rounded-xl bg-warning-500/10 px-4 py-3 text-sm text-foreground">
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-500" />
-                  {preview.avisoSeguranca}
-                </p>
+              {preview && preview.avisos.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {preview.avisos.map((aviso, i) => (
+                    <p
+                      key={i}
+                      className="flex items-start gap-2 rounded-xl bg-warning-500/10 px-4 py-3 text-sm text-foreground"
+                    >
+                      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-500" />
+                      {aviso}
+                    </p>
+                  ))}
+                </div>
               )}
             </Etapa>
           )}

@@ -35,6 +35,17 @@ export type ProvedorPagamento =
   | "hotmart"
   | "kiwify";
 
+/** Lista fechada (não texto livre) — cada uma tem um ajuste clínico
+ *  associado em lib/nutrition/calculations.ts::avaliarCondicoesSaude. */
+export type CondicaoSaude =
+  | "diabetes_tipo1"
+  | "diabetes_tipo2"
+  | "hipertensao"
+  | "doenca_renal"
+  | "hipotireoidismo"
+  | "hipertireoidismo"
+  | "colesterol_alto";
+
 export interface Perfil {
   id: string;
   nome: string;
@@ -58,7 +69,12 @@ export interface AvaliacaoNutricional {
   peso_meta_kg: number | null;
   restricoes_alimentares: string[];
   alergias: string[];
-  condicoes_saude: string[];
+  /** Lista fechada — ver tipo CondicaoSaude. */
+  condicoes_saude: CondicaoSaude[];
+  /** Condições relevantes não cobertas pela lista fechada — só registro, sem ajuste automático. */
+  condicoes_saude_outras: string | null;
+  /** Só registro/contexto — não ajusta cálculo automaticamente. */
+  medicamentos_em_uso: string[];
   refeicoes_por_dia: number;
   preferencias_alimentares: string[];
   alimentos_evitados: string[];

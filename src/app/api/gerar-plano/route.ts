@@ -21,7 +21,21 @@ const CorpoSchema = z.object({
   peso_meta_kg: z.number().positive().nullable().optional(),
   restricoes_alimentares: z.array(z.string()).default([]),
   alergias: z.array(z.string()).default([]),
-  condicoes_saude: z.array(z.string()).default([]),
+  condicoes_saude: z
+    .array(
+      z.enum([
+        "diabetes_tipo1",
+        "diabetes_tipo2",
+        "hipertensao",
+        "doenca_renal",
+        "hipotireoidismo",
+        "hipertireoidismo",
+        "colesterol_alto",
+      ])
+    )
+    .default([]),
+  condicoes_saude_outras: z.string().nullable().optional(),
+  medicamentos_em_uso: z.array(z.string()).default([]),
   refeicoes_por_dia: z.number().int().min(3).max(6).default(3),
   preferencias_alimentares: z.array(z.string()).default([]),
   alimentos_evitados: z.array(z.string()).default([]),
@@ -68,6 +82,9 @@ export async function POST(request: Request) {
     gestante: dados.gestante,
     lactante: dados.lactante,
     historicoTranstornoAlimentar: dados.historico_transtorno_alimentar,
+    condicoesSaude: dados.condicoes_saude,
+    qualidadeSono: dados.qualidade_sono,
+    nivelEstresse: dados.nivel_estresse,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase
@@ -84,6 +101,8 @@ export async function POST(request: Request) {
       restricoes_alimentares: dados.restricoes_alimentares,
       alergias: dados.alergias,
       condicoes_saude: dados.condicoes_saude,
+      condicoes_saude_outras: dados.condicoes_saude_outras || null,
+      medicamentos_em_uso: dados.medicamentos_em_uso,
       refeicoes_por_dia: dados.refeicoes_por_dia,
       preferencias_alimentares: dados.preferencias_alimentares,
       alimentos_evitados: dados.alimentos_evitados,
@@ -93,7 +112,7 @@ export async function POST(request: Request) {
       gestante: dados.gestante,
       lactante: dados.lactante,
       historico_transtorno_alimentar: dados.historico_transtorno_alimentar,
-      ajuste_seguranca: resultado.avisoSeguranca,
+      ajuste_seguranca: resultado.avisos.length > 0 ? resultado.avisos.join("\n\n") : null,
       imc: resultado.imc,
       classificacao_imc: resultado.classificacaoImc,
       tmb: resultado.tmb,
@@ -165,6 +184,6 @@ export async function POST(request: Request) {
     avaliacao: avaliacaoSalva,
     plano,
     observacoesNutricionista: planoGerado.observacoes_nutricionista,
-    avisoSeguranca: resultado.avisoSeguranca,
+    avisos: resultado.avisos,
   });
 }

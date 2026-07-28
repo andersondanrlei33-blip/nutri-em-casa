@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { CardProgresso } from "@/components/evolucao/CardProgresso";
+import { CardRCQ } from "@/components/evolucao/CardRCQ";
+import { CardMetaPeso } from "@/components/evolucao/CardMetaPeso";
 import { ComparadorConsultas } from "@/components/evolucao/ComparadorConsultas";
 import { GraficoMedidas } from "@/components/evolucao/GraficoMedidas";
 import { WeightChart } from "@/components/dashboard/WeightChart";
@@ -85,6 +87,9 @@ export default async function EvolucaoPage() {
   const gorduraInicial = medidasComGordura[0]?.percentual_gordura ?? null;
   const gorduraAtual = medidasComGordura.at(-1)?.percentual_gordura ?? null;
 
+  // RCQ precisa de cintura e quadril da MESMA medição.
+  const medidaComAmbos = [...medidas].reverse().find((m) => m.cintura_cm != null && m.quadril_cm != null);
+
   const diasTotais = diasDesde(primeira.criado_em);
 
   const mensagem = gerarMensagemMotivacional({
@@ -121,7 +126,7 @@ export default async function EvolucaoPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <CardProgresso titulo="Peso" valorInicial={pesoInicial} valorAtual={pesoAtual} unidade=" kg" favoravel={favoravelPeso} />
         <CardProgresso titulo="IMC" valorInicial={primeira.imc} valorAtual={ultima.imc} unidade="" favoravel={favoravelPeso} />
         <CardProgresso
@@ -140,7 +145,14 @@ export default async function EvolucaoPage() {
           favoravel="queda"
           rotuloVazio="Registre seu % de gordura em Acompanhamento para ver aqui."
         />
+        <CardRCQ
+          cinturaCm={medidaComAmbos?.cintura_cm ?? null}
+          quadrilCm={medidaComAmbos?.quadril_cm ?? null}
+          genero={ultima.genero}
+        />
       </div>
+
+      <CardMetaPeso pesoAtual={pesoAtual} pesoMeta={ultima.peso_meta_kg} pesoInicial={pesoInicial} diasDecorridos={diasTotais} />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>

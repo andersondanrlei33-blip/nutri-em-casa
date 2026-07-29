@@ -645,12 +645,11 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
                   <Metrica label="Água/dia" valor={`${(preview.aguaMl / 1000).toFixed(1)} L`} />
                 </div>
               )}
-              {preview && preview.resumo && (
-                <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
-                  {preview.resumo.split("\n\n").map((paragrafo, i) => (
-                    <p key={i}>{paragrafo}</p>
-                  ))}
-                </div>
+              {preview && (
+                <p className="mt-4 text-xs text-muted">
+                  O resumo completo da consulta (parecido com o de uma conversa com nutricionista) aparece depois que
+                  você concluir.
+                </p>
               )}
             </Etapa>
           )}

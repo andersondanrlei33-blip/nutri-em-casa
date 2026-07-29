@@ -85,6 +85,7 @@ export async function POST(request: Request) {
     condicoesSaude: dados.condicoes_saude,
     qualidadeSono: dados.qualidade_sono,
     nivelEstresse: dados.nivel_estresse,
+    restricoesAlimentares: dados.restricoes_alimentares,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase

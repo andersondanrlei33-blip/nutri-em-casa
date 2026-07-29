@@ -3,6 +3,7 @@
 import { Clock, Check, Pencil, Copy, Trash2 } from "lucide-react";
 import type { RefeicaoPlano } from "@/types/domain";
 import { cn } from "@/lib/utils/cn";
+import { CATEGORIA_LABEL, inferirCategoriaPorHorario } from "@/lib/utils/categoria";
 
 interface MealCardProps {
   refeicao: RefeicaoPlano;
@@ -13,6 +14,8 @@ interface MealCardProps {
 }
 
 export function MealCard({ refeicao, aoEditar, aoExcluir, aoDuplicar, aoAlternarConsumida }: MealCardProps) {
+  const categoria = refeicao.categoria ?? inferirCategoriaPorHorario(refeicao.horario);
+
   return (
     <div
       className={cn(
@@ -21,9 +24,14 @@ export function MealCard({ refeicao, aoEditar, aoExcluir, aoDuplicar, aoAlternar
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs text-muted">
-          <Clock className="h-3.5 w-3.5" />
-          {refeicao.horario.slice(0, 5)}
+        <div className="flex items-center gap-2 text-xs text-muted">
+          <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
+            {CATEGORIA_LABEL[categoria]}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" />
+            {refeicao.horario.slice(0, 5)}
+          </span>
         </div>
         <button
           onClick={aoAlternarConsumida}

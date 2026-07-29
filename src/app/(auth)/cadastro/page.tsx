@@ -13,6 +13,7 @@ export default function CadastroPage() {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [maiorDeIdade, setMaiorDeIdade] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
@@ -22,6 +23,11 @@ export default function CadastroPage() {
 
     if (senha.length < 8) {
       setErro("A senha deve ter pelo menos 8 caracteres.");
+      return;
+    }
+
+    if (!maiorDeIdade) {
+      setErro("O Nutri em Casa é destinado a maiores de 18 anos. Confirme para continuar.");
       return;
     }
 
@@ -100,6 +106,16 @@ export default function CadastroPage() {
               placeholder="Mínimo 8 caracteres"
             />
           </div>
+          <label htmlFor="maior-idade" className="flex cursor-pointer items-start gap-2.5 text-sm text-foreground">
+            <input
+              id="maior-idade"
+              type="checkbox"
+              checked={maiorDeIdade}
+              onChange={(e) => setMaiorDeIdade(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-brand-500 focus:ring-2 focus:ring-brand-400"
+            />
+            Declaro que tenho 18 anos ou mais. O Nutri em Casa é destinado a adultos.
+          </label>
           <FieldError>{erro}</FieldError>
           <Button type="submit" className="w-full" carregando={carregando}>
             Criar conta

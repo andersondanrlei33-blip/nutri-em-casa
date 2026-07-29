@@ -130,7 +130,9 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
   const [etapa, setEtapa] = useState(1);
   const [respostas, setRespostas] = useState<RespostasConsulta>(() => estadoInicialDe(avaliacaoAnterior));
   const [enviando, setEnviando] = useState(false);
-  const [resultadoFinal, setResultadoFinal] = useState<null | { observacoes: string; avisos: string[] }>(null);
+  const [resultadoFinal, setResultadoFinal] = useState<null | { observacoes: string; avisos: string[]; resumo: string }>(
+    null
+  );
 
   function atualizar<K extends keyof RespostasConsulta>(campo: K, valor: RespostasConsulta[K]) {
     setRespostas((prev) => ({ ...prev, [campo]: valor }));
@@ -256,7 +258,11 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
       const dados = await resposta.json();
       if (!resposta.ok) throw new Error(dados.erro ?? "Erro ao gerar o plano.");
 
-      setResultadoFinal({ observacoes: dados.observacoesNutricionista, avisos: dados.avisos ?? [] });
+      setResultadoFinal({
+        observacoes: dados.observacoesNutricionista,
+        avisos: dados.avisos ?? [],
+        resumo: dados.resumoConsulta ?? "",
+      });
       toast.sucesso("Seu plano alimentar foi gerado com sucesso!");
     } catch (erro) {
       toast.erro(erro instanceof Error ? erro.message : "Erro inesperado.");
@@ -295,16 +301,10 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
               <Metrica label="Meta calórica" valor={`${preview.metaCalorica} kcal`} />
             </div>
           )}
-          {resultadoFinal.avisos.length > 0 && (
-            <div className="mt-4 space-y-2 text-left">
-              {resultadoFinal.avisos.map((aviso, i) => (
-                <p
-                  key={i}
-                  className="flex items-start gap-2 rounded-xl bg-warning-500/10 px-4 py-3 text-sm text-foreground"
-                >
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-500" />
-                  {aviso}
-                </p>
+          {resultadoFinal.resumo && (
+            <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-left text-sm leading-relaxed text-foreground">
+              {resultadoFinal.resumo.split("\n\n").map((paragrafo, i) => (
+                <p key={i}>{paragrafo}</p>
               ))}
             </div>
           )}
@@ -645,16 +645,10 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
                   <Metrica label="Água/dia" valor={`${(preview.aguaMl / 1000).toFixed(1)} L`} />
                 </div>
               )}
-              {preview && preview.avisos.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  {preview.avisos.map((aviso, i) => (
-                    <p
-                      key={i}
-                      className="flex items-start gap-2 rounded-xl bg-warning-500/10 px-4 py-3 text-sm text-foreground"
-                    >
-                      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-500" />
-                      {aviso}
-                    </p>
+              {preview && preview.resumo && (
+                <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
+                  {preview.resumo.split("\n\n").map((paragrafo, i) => (
+                    <p key={i}>{paragrafo}</p>
                   ))}
                 </div>
               )}

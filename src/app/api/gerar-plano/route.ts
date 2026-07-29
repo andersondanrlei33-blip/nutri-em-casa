@@ -36,6 +36,8 @@ const CorpoSchema = z.object({
     .default([]),
   condicoes_saude_outras: z.string().nullable().optional(),
   medicamentos_em_uso: z.array(z.string()).default([]),
+  consumo_alcool: z.enum(["nunca", "raramente", "moderado", "frequente"]).default("nunca"),
+  tabagismo: z.enum(["nunca", "ex_fumante", "fumante"]).default("nunca"),
   refeicoes_por_dia: z.number().int().min(3).max(6).default(3),
   preferencias_alimentares: z.array(z.string()).default([]),
   alimentos_evitados: z.array(z.string()).default([]),
@@ -86,6 +88,10 @@ export async function POST(request: Request) {
     qualidadeSono: dados.qualidade_sono,
     nivelEstresse: dados.nivel_estresse,
     restricoesAlimentares: dados.restricoes_alimentares,
+    consumoAlcool: dados.consumo_alcool,
+    medicamentosEmUso: dados.medicamentos_em_uso,
+    condicoesSaudeOutras: dados.condicoes_saude_outras,
+    tabagismo: dados.tabagismo,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase
@@ -104,6 +110,8 @@ export async function POST(request: Request) {
       condicoes_saude: dados.condicoes_saude,
       condicoes_saude_outras: dados.condicoes_saude_outras || null,
       medicamentos_em_uso: dados.medicamentos_em_uso,
+      consumo_alcool: dados.consumo_alcool,
+      tabagismo: dados.tabagismo,
       refeicoes_por_dia: dados.refeicoes_por_dia,
       preferencias_alimentares: dados.preferencias_alimentares,
       alimentos_evitados: dados.alimentos_evitados,

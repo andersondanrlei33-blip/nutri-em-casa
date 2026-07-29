@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "@/hooks/useUser";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, sairComForca } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
@@ -39,20 +39,7 @@ export default function ConfiguracoesPage() {
   }
 
   async function sairDeTodosDispositivos() {
-    // Mesmo cuidado do botão de sair da barra superior: signOut() pode ficar
-    // pendurado sem nunca resolver, então damos um limite de 3s antes de
-    // redirecionar de qualquer forma.
-    try {
-      await Promise.race([
-        supabase.auth.signOut({ scope: "global" }),
-        new Promise((resolve) => setTimeout(resolve, 3000)),
-      ]);
-    } catch {
-      // Mesmo se der erro, ainda assim seguimos pro login.
-    }
-    // Navegação dura, não router.push — evita a corrida onde o middleware
-    // ainda vê o cookie de sessão antigo e manda o usuário de volta pro app.
-    window.location.href = "/login";
+    await sairComForca({ escopo: "global" });
   }
 
   return (

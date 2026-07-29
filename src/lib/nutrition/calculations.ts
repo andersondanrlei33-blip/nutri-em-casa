@@ -78,6 +78,11 @@ export interface CondicaoEspecial {
   gestante?: boolean;
   lactante?: boolean;
   historicoTranstornoAlimentar?: boolean;
+  /** Sinal indireto de possível transtorno alimentar não declarado: IMC já
+   *  abaixo do peso (< 18.5) e objetivo escolhido é emagrecimento. Um
+   *  nutricionista fica atento a essa combinação mesmo sem a pessoa marcar
+   *  "histórico de transtorno alimentar" explicitamente. */
+  imcAbaixoDoPesoComObjetivoEmagrecimento?: boolean;
 }
 
 export interface MetaCaloricaResultado {
@@ -104,20 +109,27 @@ export function calcularMetaCalorica(
   genero: Genero,
   condicaoEspecial: CondicaoEspecial = {}
 ): MetaCaloricaResultado {
-  const { gestante, lactante, historicoTranstornoAlimentar } = condicaoEspecial;
+  const { gestante, lactante, historicoTranstornoAlimentar, imcAbaixoDoPesoComObjetivoEmagrecimento } =
+    condicaoEspecial;
 
   if (gestante || lactante || historicoTranstornoAlimentar) {
-    const motivo = gestante
-      ? "gravidez"
-      : lactante
-        ? "amamentação"
-        : "histórico de transtorno alimentar";
+    const motivo = gestante ? "gravidez" : lactante ? "amamentação" : "histórico de transtorno alimentar";
     return {
       valor: tdee,
       avisoSeguranca:
         `Por segurança, sua meta foi ajustada para manutenção calórica (sem déficit ou superávit) devido a ${motivo} ` +
         "informado(a) na consulta. Recomendamos fortemente buscar acompanhamento com um nutricionista licenciado " +
         "para orientação individualizada nesta fase.",
+    };
+  }
+
+  if (imcAbaixoDoPesoComObjetivoEmagrecimento) {
+    return {
+      valor: tdee,
+      avisoSeguranca:
+        "Seu IMC atual já está na faixa 'abaixo do peso', então não aplicamos o déficit calórico que o objetivo de " +
+        "emagrecimento pediria — isso não seria seguro. Ajustamos sua meta para manutenção e recomendamos fortemente " +
+        "conversar com um nutricionista ou médico antes de buscar perder mais peso.",
     };
   }
 
@@ -343,6 +355,7 @@ export function gerarResultadoAvaliacao(
     gestante: dados.gestante,
     lactante: dados.lactante,
     historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
+    imcAbaixoDoPesoComObjetivoEmagrecimento: imc < 18.5 && dados.objetivo === "emagrecimento",
   });
 
   const { avisos: avisosCondicoes, limiteProteinaPorKg } = avaliarCondicoesSaude(dados.condicoesSaude ?? []);

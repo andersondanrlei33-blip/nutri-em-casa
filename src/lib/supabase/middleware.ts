@@ -39,7 +39,9 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const publicPaths = ["/", "/login", "/cadastro", "/auth", "/planos"];
+  // "/planos" não existe como rota própria — a landing page usa "/#planos"
+  // (âncora) e a página real de assinatura é "/assinatura".
+  const publicPaths = ["/", "/login", "/cadastro", "/auth"];
   const isPublic = publicPaths.some(
     (p) => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + "/")
   );

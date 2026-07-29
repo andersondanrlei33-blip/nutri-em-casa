@@ -15,6 +15,7 @@ export default function ConfiguracoesPage() {
 
   const [planos, setPlanos] = useState<PlanoAlimentar[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [ativandoId, setAtivandoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -30,12 +31,25 @@ export default function ConfiguracoesPage() {
   }, [user]);
 
   async function ativarPlano(id: string) {
-    if (!user) return;
-    await supabase.from("planos_alimentares").update({ ativo: false }).eq("usuario_id", user.id);
-    const { error } = await supabase.from("planos_alimentares").update({ ativo: true }).eq("id", id);
-    if (error) return toast.erro("Erro ao ativar plano.");
-    setPlanos((prev) => prev.map((p) => ({ ...p, ativo: p.id === id })));
-    toast.sucesso("Plano alimentar ativado.");
+    if (!user || ativandoId) return; // evita clique duplo enquanto já está ativando um plano
+    setAtivandoId(id);
+    try {
+      const { error: erroDesativar } = await supabase
+        .from("planos_alimentares")
+        .update({ ativo: false })
+        .eq("usuario_id", user.id);
+      if (erroDesativar) return toast.erro("Erro ao ativar plano.");
+
+      const { error } = await supabase.from("planos_alimentares").update({ ativo: true }).eq("id", id);
+      if (error) return toast.erro("Erro ao ativar plano.");
+
+      setPlanos((prev) => prev.map((p) => ({ ...p, ativo: p.id === id })));
+      toast.sucesso("Plano alimentar ativado.");
+    } catch {
+      toast.erro("Erro ao ativar plano.");
+    } finally {
+      setAtivandoId(null);
+    }
   }
 
   async function sairDeTodosDispositivos() {
@@ -69,7 +83,13 @@ export default function ConfiguracoesPage() {
                   {plano.ativo ? (
                     <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-medium text-brand-700">Ativo</span>
                   ) : (
-                    <Button variante="secundaria" tamanho="sm" onClick={() => ativarPlano(plano.id)}>
+                    <Button
+                      variante="secundaria"
+                      tamanho="sm"
+                      carregando={ativandoId === plano.id}
+                      disabled={ativandoId !== null && ativandoId !== plano.id}
+                      onClick={() => ativarPlano(plano.id)}
+                    >
                       Ativar
                     </Button>
                   )}

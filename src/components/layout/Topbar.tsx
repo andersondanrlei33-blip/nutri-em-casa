@@ -2,7 +2,7 @@
 
 import { Menu, LogOut, User as UserIcon, HelpCircle } from "lucide-react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
+import { sairComForca } from "@/lib/supabase/client";
 import { useUser } from "@/hooks/useUser";
 import { diasRestantesTrial } from "@/lib/subscriptions/access";
 import { Badge } from "@/components/ui/Badge";
@@ -11,28 +11,6 @@ import { useTourStore } from "@/lib/tour/store";
 export function Topbar({ aoAbrirMenu }: { aoAbrirMenu: () => void }) {
   const { perfil, assinatura } = useUser();
   const iniciarTour = useTourStore((s) => s.iniciar);
-
-  async function sair() {
-    const supabase = createClient();
-    // supabase.auth.signOut() pode ficar pendurado (ex: lock de auth travado
-    // entre abas, extensão bloqueando a chamada de rede) e nunca resolver —
-    // isso deixava o botão "sem fazer nada" pro usuário. Damos no máximo 3s
-    // pra ele terminar; se não terminar, redirecionamos assim mesmo em vez de
-    // travar a pessoa dentro do app.
-    try {
-      await Promise.race([
-        supabase.auth.signOut(),
-        new Promise((resolve) => setTimeout(resolve, 3000)),
-      ]);
-    } catch {
-      // Mesmo se signOut() der erro, ainda assim seguimos pro login.
-    }
-    // Navegação "dura" (recarrega a página) em vez de router.push: garante que
-    // o middleware veja os cookies de sessão já limpos na próxima requisição,
-    // evitando a corrida onde a navegação client-side chega antes da limpeza
-    // do cookie terminar e o middleware manda o usuário de volta pro app.
-    window.location.href = "/login";
-  }
 
   const diasTrial = assinatura ? diasRestantesTrial(assinatura) : 0;
 
@@ -68,7 +46,7 @@ export function Topbar({ aoAbrirMenu }: { aoAbrirMenu: () => void }) {
           <HelpCircle className="h-4.5 w-4.5" />
         </button>
         <button
-          onClick={sair}
+          onClick={() => sairComForca()}
           className="rounded-xl p-2 text-muted hover:bg-black/[0.03] hover:text-danger-500"
           title="Sair"
         >

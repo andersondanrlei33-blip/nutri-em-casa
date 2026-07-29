@@ -314,6 +314,54 @@ test("Tabagismo + condição cardiometabólica soma aviso de risco cardiovascula
   assert.ok(aviso[1].includes("cardiovascular"));
 });
 
+test("resumo: consulta simples sem avisos gera abertura + fechamento", () => {
+  const resultado = gerarResultadoAvaliacao({
+    pesoKg: 80,
+    alturaCm: 178,
+    idade: 35,
+    genero: "masculino",
+    nivelAtividade: "leve",
+    objetivo: "emagrecimento",
+  });
+  assert.ok(resultado.resumo.includes(String(resultado.imc)));
+  assert.ok(resultado.resumo.includes("emagrecer"));
+  assert.ok(resultado.resumo.includes("consulta de retorno"));
+  assert.equal(resultado.resumo.split("\n\n").length, 2); // só abertura + fechamento
+});
+
+test("resumo: reúne condições, hábitos e dieta em blocos temáticos", () => {
+  const resultado = gerarResultadoAvaliacao({
+    pesoKg: 78,
+    alturaCm: 165,
+    idade: 42,
+    genero: "feminino",
+    nivelAtividade: "leve",
+    objetivo: "emagrecimento",
+    condicoesSaude: ["diabetes_tipo2"],
+    tabagismo: "fumante",
+    consumoAlcool: "frequente",
+    restricoesAlimentares: ["vegano"],
+  });
+  assert.ok(resultado.resumo.includes("Sobre suas condições de saúde"));
+  assert.ok(resultado.resumo.includes("Sobre seus hábitos"));
+  assert.ok(resultado.resumo.includes("vitamina C")); // tabagismo
+  assert.ok(resultado.resumo.includes("B12")); // dieta vegana
+});
+
+test("resumo: quando há aviso de segurança calórica, ele entra direto na abertura", () => {
+  const resultado = gerarResultadoAvaliacao({
+    pesoKg: 70,
+    alturaCm: 162,
+    idade: 30,
+    genero: "feminino",
+    nivelAtividade: "leve",
+    objetivo: "emagrecimento",
+    gestante: true,
+  });
+  const primeiroParagrafo = resultado.resumo.split("\n\n")[0];
+  assert.ok(primeiroParagrafo.includes("gravidez"));
+});
+
 test("RCQ classifica risco por gênero", () => {
   const mulherRisco = calcularRCQ(90, 100, "feminino"); // 0.9 >= 0.85
   assert.equal(mulherRisco.classificacao, "Risco aumentado");

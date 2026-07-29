@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useUser } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -13,7 +12,6 @@ import type { PlanoAlimentar } from "@/types/domain";
 export default function ConfiguracoesPage() {
   const { user } = useUser();
   const supabase = createClient();
-  const router = useRouter();
 
   const [planos, setPlanos] = useState<PlanoAlimentar[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -42,7 +40,9 @@ export default function ConfiguracoesPage() {
 
   async function sairDeTodosDispositivos() {
     await supabase.auth.signOut({ scope: "global" });
-    router.push("/login");
+    // Navegação dura, não router.push — evita a corrida onde o middleware
+    // ainda vê o cookie de sessão antigo e manda o usuário de volta pro app.
+    window.location.href = "/login";
   }
 
   return (

@@ -92,6 +92,7 @@ export async function POST(request: Request) {
     medicamentosEmUso: dados.medicamentos_em_uso,
     condicoesSaudeOutras: dados.condicoes_saude_outras,
     tabagismo: dados.tabagismo,
+    observacoesPaciente: dados.observacoes,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase

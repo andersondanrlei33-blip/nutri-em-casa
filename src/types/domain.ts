@@ -135,9 +135,23 @@ export interface Receita {
   alergenos: string[];
   /** Vocabulário fechado: vegetariano, vegano, sem_gluten, sem_lactose. */
   dietas_atendidas: string[];
+  /** Vocabulário fechado: ver IndicacaoSaudeReceita. Usado pra priorizar
+   *  (não bloquear) receitas pra condições de saúde — ver receitaMatching.ts. */
+  indicacoes_saude: IndicacaoSaudeReceita[];
   criado_em: string;
   atualizado_em: string;
 }
+
+/** Indicações de saúde por receita — vocabulário FECHADO, nunca livre.
+ *  Usado tanto pras condições estruturadas (diabetes, hipertensão...) quanto
+ *  pra classificação da IA do campo "outra condição" (sempre escolhendo
+ *  dentro dessa lista, nunca inventando uma tag nova). */
+export type IndicacaoSaudeReceita =
+  | "baixo_sodio"
+  | "baixo_indice_glicemico"
+  | "baixo_colesterol"
+  | "controle_renal"
+  | "alta_fibra";
 
 export type CategoriaReceita =
   | "cafe_da_manha"

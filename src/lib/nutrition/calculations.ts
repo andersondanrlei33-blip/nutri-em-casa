@@ -14,7 +14,7 @@
  * (geração oficial do plano, salva no banco).
  */
 
-import type { CondicaoSaude, Genero, NivelAtividade, ObjetivoNutricional } from "../../types/domain.ts";
+import type { CondicaoSaude, ConsumoAlcool, Genero, NivelAtividade, ObjetivoNutricional, StatusTabagismo } from "../../types/domain.ts";
 import { normalizar } from "./receitaMatching.ts";
 
 export interface DadosAntropometricos {
@@ -84,6 +84,11 @@ export interface CondicaoEspecial {
    *  nutricionista fica atento a essa combinação mesmo sem a pessoa marcar
    *  "histórico de transtorno alimentar" explicitamente. */
   imcAbaixoDoPesoComObjetivoEmagrecimento?: boolean;
+  /** Rótulo de uma condição clínica complexa detectada no campo de texto
+   *  livre "outra condição" (ex: cirurgia bariátrica, insuficiência cardíaca,
+   *  tratamento oncológico) — ver identificarCondicaoClinicaComplexa. Null/
+   *  undefined quando nada foi identificado. */
+  condicaoClinicaComplexa?: string | null;
 }
 
 export interface MetaCaloricaResultado {
@@ -110,8 +115,25 @@ export function calcularMetaCalorica(
   genero: Genero,
   condicaoEspecial: CondicaoEspecial = {}
 ): MetaCaloricaResultado {
-  const { gestante, lactante, historicoTranstornoAlimentar, imcAbaixoDoPesoComObjetivoEmagrecimento } =
-    condicaoEspecial;
+  const {
+    gestante,
+    lactante,
+    historicoTranstornoAlimentar,
+    imcAbaixoDoPesoComObjetivoEmagrecimento,
+    condicaoClinicaComplexa,
+  } = condicaoEspecial;
+
+  if (condicaoClinicaComplexa) {
+    return {
+      valor: tdee,
+      avisoSeguranca:
+        `Você mencionou "${condicaoClinicaComplexa}" — esse tipo de condição precisa de acompanhamento ` +
+        "nutricional presencial, com cálculos individualizados que este app não tem como fazer com segurança " +
+        "(ex: pós-bariátrica exige volumes de porção muito específicos; algumas condições exigem restrição de " +
+        "líquidos, o oposto da meta de água calculada aqui). Por segurança, ajustamos sua meta para manutenção — " +
+        "procure um nutricionista ou seu médico antes de seguir qualquer plano alimentar.",
+    };
+  }
 
   if (gestante || lactante || historicoTranstornoAlimentar) {
     const motivo = gestante ? "gravidez" : lactante ? "amamentação" : "histórico de transtorno alimentar";
@@ -226,12 +248,65 @@ export function calcularMacros(
 
 /**
  * Água recomendada: 35ml/kg como base, +500ml se nível de atividade
- * moderado ou superior (perda extra por suor).
+ * moderado ou superior (perda extra por suor), +300ml se gestante e
+ * +800ml se lactante (referência clínica usual: gestação aumenta a
+ * necessidade hídrica moderadamente, e a produção de leite consome
+ * bem mais água — lactante tem prioridade se os dois estiverem marcados,
+ * o que não deveria acontecer na prática).
  */
-export function calcularAguaRecomendada(pesoKg: number, nivelAtividade: NivelAtividade): number {
+export function calcularAguaRecomendada(
+  pesoKg: number,
+  nivelAtividade: NivelAtividade,
+  condicaoEspecial: { gestante?: boolean; lactante?: boolean } = {}
+): number {
   const base = pesoKg * 35;
-  const extra = ["moderado", "intenso", "atleta"].includes(nivelAtividade) ? 500 : 0;
-  return arredondar(base + extra, 0);
+  const extraAtividade = ["moderado", "intenso", "atleta"].includes(nivelAtividade) ? 500 : 0;
+  const extraFase = condicaoEspecial.lactante ? 800 : condicaoEspecial.gestante ? 300 : 0;
+  return arredondar(base + extraAtividade + extraFase, 0);
+}
+
+const CONDICOES_COMPLEXAS_NAO_COBERTAS: { termos: string[]; rotulo: string }[] = [
+  {
+    termos: ["bariatrica", "bypass gastrico", "sleeve gastrico", "gastrectomia"],
+    rotulo: "cirurgia bariátrica",
+  },
+  {
+    termos: ["insuficiencia cardiaca", "dialise", "hemodialise"],
+    rotulo: "uma condição que exige restrição de líquidos e acompanhamento médico próximo",
+  },
+  {
+    termos: ["quimioterapia", "radioterapia", "oncologico", "oncologica", "cancer"],
+    rotulo: "tratamento oncológico",
+  },
+  {
+    termos: ["crohn", "retocolite", "colite ulcerativa"],
+    rotulo: "uma doença inflamatória intestinal",
+  },
+  {
+    termos: ["transplante"],
+    rotulo: "histórico de transplante",
+  },
+];
+
+/**
+ * Escaneia o campo de texto livre "outra condição não listada" atrás de
+ * termos que indicam uma condição clínica complexa demais para este app
+ * calcular com segurança (cirurgia bariátrica, insuficiência cardíaca,
+ * tratamento oncológico, doença inflamatória intestinal, transplante...).
+ * Mesma lógica de defesa em profundidade já usada pra alergia em
+ * receitaMatching.ts::textoContemAlergiaDoUsuario: não confiar só na
+ * pessoa saber que precisa buscar ajuda presencial — o app precisa
+ * reconhecer isso sozinho e reagir (ver calcularMetaCalorica).
+ */
+export function identificarCondicaoClinicaComplexa(texto: string | null | undefined): string | null {
+  if (!texto) return null;
+  const normalizado = normalizar(texto);
+  for (const grupo of CONDICOES_COMPLEXAS_NAO_COBERTAS) {
+    if (grupo.termos.some((termo) => normalizado.includes(termo))) {
+      return grupo.rotulo;
+    }
+  }
+  return null;
 }
 
 /**
@@ -372,6 +447,115 @@ export function avaliarObjetivoVsRiscoCardiometabolico(
 }
 
 /**
+ * Consumo de álcool informado na consulta. Não existe nível seguro
+ * estabelecido para gestação/amamentação (evitar completamente); fora
+ * disso, só avisamos em consumo moderado/frequente, e reforçamos riscos
+ * específicos quando há diabetes (hipoglicemia, principalmente com
+ * insulina/hipoglicemiantes) ou hipertensão (eleva a pressão).
+ */
+export function avaliarConsumoAlcool(
+  consumo: ConsumoAlcool,
+  condicoes: CondicaoSaude[],
+  gestante: boolean,
+  lactante: boolean
+): string[] {
+  if (consumo === "nunca") return [];
+
+  if (gestante || lactante) {
+    return [
+      "Não existe nível seguro de consumo de álcool comprovado durante a gravidez ou amamentação — o ideal é " +
+        "evitar completamente. Se estiver difícil, vale conversar com seu médico sobre apoio para isso.",
+    ];
+  }
+
+  const avisos: string[] = [];
+  if (consumo === "moderado" || consumo === "frequente") {
+    avisos.push(
+      "Álcool tem calorias que não entram no cálculo do seu plano alimentar — quanto mais frequente o consumo, " +
+        "mais isso pode atrapalhar seu objetivo."
+    );
+  }
+  if (consumo === "frequente" && (condicoes.includes("diabetes_tipo1") || condicoes.includes("diabetes_tipo2"))) {
+    avisos.push(
+      "Álcool combinado com diabetes — principalmente se você usa insulina ou outros medicamentos que baixam a " +
+        "glicemia — pode causar hipoglicemia. Vale conversar com seu médico sobre isso."
+    );
+  }
+  if (consumo === "frequente" && condicoes.includes("hipertensao")) {
+    avisos.push("Consumo frequente de álcool pode elevar sua pressão arterial — vale moderar e acompanhar.");
+  }
+  return avisos;
+}
+
+/**
+ * Tabagismo atual aumenta o consumo de vitamina C pelo estresse oxidativo
+ * do cigarro, e combinado com uma condição cardiometabólica (hipertensão,
+ * colesterol alto, diabetes) multiplica bastante o risco cardiovascular —
+ * geralmente mais do que qualquer ajuste isolado na dieta resolveria.
+ * Ex-fumante e nunca fumou não geram aviso.
+ */
+export function avaliarTabagismo(status: StatusTabagismo, condicoes: CondicaoSaude[]): string[] {
+  if (status !== "fumante") return [];
+
+  const avisos: string[] = [
+    "Fumar aumenta a necessidade de vitamina C pelo estresse oxidativo do cigarro — priorize frutas cítricas, " +
+      "acerola, goiaba e vegetais crus no seu dia a dia.",
+  ];
+
+  const condicoesCardiometabolicas: CondicaoSaude[] = [
+    "hipertensao",
+    "colesterol_alto",
+    "diabetes_tipo1",
+    "diabetes_tipo2",
+  ];
+  if (condicoes.some((c) => condicoesCardiometabolicas.includes(c))) {
+    avisos.push(
+      "Fumar combinado com uma condição cardiometabólica (hipertensão, colesterol alto ou diabetes) multiplica " +
+        "bastante o risco cardiovascular — buscar apoio pra parar de fumar teria mais impacto na sua saúde do que " +
+        "qualquer ajuste na dieta."
+    );
+  }
+  return avisos;
+}
+
+/**
+ * Disclaimer genérico para medicamentos em uso. Deliberadamente NÃO
+ * tentamos cruzar medicamento x alimento aqui (ex: varfarina e vitamina K,
+ * IMAO e tiramina) — é uma área de alto risco pra acertar com uma lista de
+ * texto livre, então preferimos reforçar que isso deve ser checado com um
+ * profissional em vez de arriscar uma regra automática errada.
+ */
+export function avaliarMedicamentos(medicamentosEmUso: string[]): string[] {
+  if (medicamentosEmUso.length === 0) return [];
+  return [
+    "Você informou medicamentos em uso. Alguns medicamentos interagem com alimentos ou nutrientes específicos " +
+      "(ex: anticoagulantes e vitamina K) — confirme com seu médico ou farmacêutico se algum dos seus tem alguma " +
+      "interação relevante com a alimentação.",
+  ];
+}
+
+/**
+ * Gestação/amamentação combinada com uma condição crônica (ex: diabetes,
+ * hipertensão) pede acompanhamento mais próximo do que o normal — inclusive
+ * porque algumas condições mudam de comportamento nessa fase (diabetes
+ * gestacional, por exemplo, não está na nossa lista fechada de condições e
+ * precisa de avaliação médica específica que este app não cobre).
+ */
+export function avaliarGestacaoComCondicao(
+  gestante: boolean,
+  lactante: boolean,
+  condicoes: CondicaoSaude[]
+): string[] {
+  if ((!gestante && !lactante) || condicoes.length === 0) return [];
+  const fase = gestante ? "gravidez" : "amamentação";
+  return [
+    `Ter uma condição de saúde crônica durante a ${fase} pede acompanhamento médico/nutricional mais próximo do ` +
+      "que o normal — algumas condições (como diabetes) mudam de comportamento nessa fase e precisam de avaliação " +
+      "específica que este app não substitui. Priorize consultas presenciais nesse período.",
+  ];
+}
+
+/**
  * Relação cintura-quadril (RCQ) — indicador clássico de risco cardiovascular
  * quando as duas medidas estão disponíveis. Referências de corte (OMS):
  * mulher ≥0.85 e homem ≥0.90 já indicam risco aumentado.
@@ -416,6 +600,10 @@ export function gerarResultadoAvaliacao(
     qualidadeSono?: number | null;
     nivelEstresse?: number | null;
     restricoesAlimentares?: string[];
+    consumoAlcool?: ConsumoAlcool;
+    medicamentosEmUso?: string[];
+    condicoesSaudeOutras?: string | null;
+    tabagismo?: StatusTabagismo;
   } & CondicaoEspecial
 ): ResultadoAvaliacao {
   const imc = calcularIMC(dados);
@@ -427,11 +615,15 @@ export function gerarResultadoAvaliacao(
     lactante: dados.lactante,
     historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
     imcAbaixoDoPesoComObjetivoEmagrecimento: imc < 18.5 && dados.objetivo === "emagrecimento",
+    condicaoClinicaComplexa: identificarCondicaoClinicaComplexa(dados.condicoesSaudeOutras),
   });
 
   const { avisos: avisosCondicoes, limiteProteinaPorKg } = avaliarCondicoesSaude(dados.condicoesSaude ?? []);
   const macros = calcularMacros(metaCalorica, dados.pesoKg, dados.objetivo, limiteProteinaPorKg);
-  const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade);
+  const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade, {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+  });
   const avisosSono = avaliarSonoEEstresse(dados.qualidadeSono ?? null, dados.nivelEstresse ?? null);
   const avisosDieta = avaliarDietaRestritiva(dados.restricoesAlimentares ?? []);
   const avisosObjetivoRisco = avaliarObjetivoVsRiscoCardiometabolico(imc, dados.objetivo, dados.condicoesSaude ?? [], {
@@ -439,13 +631,30 @@ export function gerarResultadoAvaliacao(
     lactante: dados.lactante,
     historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
   });
+  const avisosAlcool = avaliarConsumoAlcool(
+    dados.consumoAlcool ?? "nunca",
+    dados.condicoesSaude ?? [],
+    dados.gestante ?? false,
+    dados.lactante ?? false
+  );
+  const avisosGestacaoCondicao = avaliarGestacaoComCondicao(
+    dados.gestante ?? false,
+    dados.lactante ?? false,
+    dados.condicoesSaude ?? []
+  );
+  const avisosMedicamentos = avaliarMedicamentos(dados.medicamentosEmUso ?? []);
+  const avisosTabagismo = avaliarTabagismo(dados.tabagismo ?? "nunca", dados.condicoesSaude ?? []);
 
   const avisos = [
     avisoSeguranca,
+    ...avisosGestacaoCondicao,
     ...avisosCondicoes,
+    ...avisosAlcool,
+    ...avisosTabagismo,
     ...avisosSono,
     ...avisosDieta,
     ...avisosObjetivoRisco,
+    ...avisosMedicamentos,
   ].filter((a): a is string => Boolean(a));
 
   return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl, avisos };

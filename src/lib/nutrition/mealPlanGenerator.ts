@@ -174,6 +174,13 @@ Dados do paciente:
 - Alimentos evitados: ${avaliacao.alimentos_evitados.join(", ") || "nenhum"}
 - Preferências alimentares: ${avaliacao.preferencias_alimentares.join(", ") || "nenhuma"}
 ${
+  avaliacao.observacoes?.trim()
+    ? `- Contexto adicional que o paciente compartilhou: "${avaliacao.observacoes.trim()}" — use isso pra tornar o ` +
+      "plano mais realista pro dia a dia dele(a) (ex: receitas mais rápidas se ele(a) viaja muito ou cozinha pouco), " +
+      "mas isso NUNCA tem prioridade sobre as regras de segurança de alergia/condição de saúde abaixo.\n"
+    : ""
+}
+${
   orientacoesCondicoes.length > 0
     ? `\nCONDIÇÕES DE SAÚDE — estas orientações têm PRIORIDADE sobre as preferências alimentares acima quando ` +
       `houver conflito (ex: paciente prefere doce mas tem diabetes → modere o doce, não ignore a condição):\n` +

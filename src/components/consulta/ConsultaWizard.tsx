@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { toast } from "@/components/ui/Toast";
 import { gerarResultadoAvaliacao } from "@/lib/nutrition/calculations";
 import { formatarData, diasDesde } from "@/lib/utils/date";
-import type { AvaliacaoNutricional, CondicaoSaude, Genero, NivelAtividade, ObjetivoNutricional } from "@/types/domain";
+import type { AvaliacaoNutricional, CondicaoSaude, ConsumoAlcool, Genero, NivelAtividade, ObjetivoNutricional, StatusTabagismo } from "@/types/domain";
 
 const CONDICOES_SAUDE_OPCOES: { valor: CondicaoSaude; label: string }[] = [
   { valor: "diabetes_tipo1", label: "Diabetes tipo 1" },
@@ -37,6 +37,8 @@ interface RespostasConsulta {
   confirmou_sem_condicoes: boolean;
   condicoes_saude_outras: string;
   medicamentos_em_uso: string;
+  consumo_alcool: ConsumoAlcool;
+  tabagismo: StatusTabagismo;
   refeicoes_por_dia: string;
   preferencias_alimentares: string;
   alimentos_evitados: string;
@@ -64,6 +66,8 @@ const INICIAL: RespostasConsulta = {
   confirmou_sem_condicoes: false,
   condicoes_saude_outras: "",
   medicamentos_em_uso: "",
+  consumo_alcool: "nunca",
+  tabagismo: "nunca",
   refeicoes_por_dia: "4",
   preferencias_alimentares: "",
   alimentos_evitados: "",
@@ -104,6 +108,8 @@ function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsul
     confirmou_sem_condicoes: false,
     condicoes_saude_outras: anterior.condicoes_saude_outras ?? "",
     medicamentos_em_uso: anterior.medicamentos_em_uso.join(", "),
+    consumo_alcool: anterior.consumo_alcool ?? "nunca",
+    tabagismo: anterior.tabagismo ?? "nunca",
     refeicoes_por_dia: String(anterior.refeicoes_por_dia),
     preferencias_alimentares: anterior.preferencias_alimentares.join(", "),
     alimentos_evitados: anterior.alimentos_evitados.join(", "),
@@ -160,6 +166,10 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
         qualidadeSono: Number(respostas.qualidade_sono),
         nivelEstresse: Number(respostas.nivel_estresse),
         restricoesAlimentares: paraLista(respostas.restricoes_alimentares),
+        consumoAlcool: respostas.consumo_alcool,
+        medicamentosEmUso: paraLista(respostas.medicamentos_em_uso),
+        condicoesSaudeOutras: respostas.condicoes_saude_outras,
+        tabagismo: respostas.tabagismo,
       });
     } catch {
       return null;
@@ -229,6 +239,8 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
           condicoes_saude: respostas.condicoes_saude,
           condicoes_saude_outras: respostas.condicoes_saude_outras || null,
           medicamentos_em_uso: paraLista(respostas.medicamentos_em_uso),
+          consumo_alcool: respostas.consumo_alcool,
+          tabagismo: respostas.tabagismo,
           refeicoes_por_dia: Number(respostas.refeicoes_por_dia),
           preferencias_alimentares: paraLista(respostas.preferencias_alimentares),
           alimentos_evitados: paraLista(respostas.alimentos_evitados),
@@ -533,7 +545,11 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
                     value={respostas.condicoes_saude_outras}
                     onChange={(e) => atualizar("condicoes_saude_outras", e.target.value)}
                   />
-                  <p className="mt-1 text-xs text-muted">Fica registrado no seu histórico, mas não ajusta o cálculo automaticamente.</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Fica registrado no seu histórico. Se for algo como cirurgia bariátrica, insuficiência cardíaca,
+                    tratamento oncológico ou outra condição complexa, ajustamos seu plano para manutenção por
+                    segurança e recomendamos acompanhamento presencial.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="medicamentos">Medicamentos em uso (opcional)</Label>
@@ -544,6 +560,23 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
                     onChange={(e) => atualizar("medicamentos_em_uso", e.target.value)}
                   />
                   <p className="mt-1 text-xs text-muted">Também fica só registrado — alguns medicamentos afetam peso/apetite, e isso ajuda numa eventual avaliação profissional.</p>
+                </div>
+                <div>
+                  <Label htmlFor="alcool">Com que frequência você consome álcool?</Label>
+                  <Select id="alcool" value={respostas.consumo_alcool} onChange={(e) => atualizar("consumo_alcool", e.target.value as ConsumoAlcool)}>
+                    <option value="nunca">Nunca</option>
+                    <option value="raramente">Raramente (ocasiões sociais)</option>
+                    <option value="moderado">Moderado (1-2x por semana)</option>
+                    <option value="frequente">Frequente (3x ou mais por semana)</option>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="tabagismo">Você fuma?</Label>
+                  <Select id="tabagismo" value={respostas.tabagismo} onChange={(e) => atualizar("tabagismo", e.target.value as StatusTabagismo)}>
+                    <option value="nunca">Nunca fumei</option>
+                    <option value="ex_fumante">Já fumei, mas parei</option>
+                    <option value="fumante">Fumo atualmente</option>
+                  </Select>
                 </div>
                 <div>
                   <Label htmlFor="sono">Qualidade do sono (1 = ruim, 5 = ótima)</Label>

@@ -46,6 +46,14 @@ export type CondicaoSaude =
   | "hipertireoidismo"
   | "colesterol_alto";
 
+/** Frequência de consumo de álcool informada na consulta — usada em
+ *  lib/nutrition/calculations.ts::avaliarConsumoAlcool. */
+export type ConsumoAlcool = "nunca" | "raramente" | "moderado" | "frequente";
+
+/** Status de tabagismo informado na consulta — usado em
+ *  lib/nutrition/calculations.ts::avaliarTabagismo. */
+export type StatusTabagismo = "nunca" | "ex_fumante" | "fumante";
+
 export interface Perfil {
   id: string;
   nome: string;
@@ -73,8 +81,13 @@ export interface AvaliacaoNutricional {
   condicoes_saude: CondicaoSaude[];
   /** Condições relevantes não cobertas pela lista fechada — só registro, sem ajuste automático. */
   condicoes_saude_outras: string | null;
-  /** Só registro/contexto — não ajusta cálculo automaticamente. */
+  /** Só registro/contexto — não ajusta cálculo automaticamente, mas gera um
+   *  disclaimer genérico pra checar interações com um profissional. */
   medicamentos_em_uso: string[];
+  /** Ver ConsumoAlcool. */
+  consumo_alcool: ConsumoAlcool;
+  /** Ver StatusTabagismo. */
+  tabagismo: StatusTabagismo;
   refeicoes_por_dia: number;
   preferencias_alimentares: string[];
   alimentos_evitados: string[];

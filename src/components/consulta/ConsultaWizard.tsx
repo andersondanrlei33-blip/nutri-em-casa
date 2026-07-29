@@ -159,6 +159,7 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
         condicoesSaude: respostas.condicoes_saude,
         qualidadeSono: Number(respostas.qualidade_sono),
         nivelEstresse: Number(respostas.nivel_estresse),
+        restricoesAlimentares: paraLista(respostas.restricoes_alimentares),
       });
     } catch {
       return null;

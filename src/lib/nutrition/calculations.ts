@@ -589,6 +589,78 @@ export interface ResultadoAvaliacao {
   /** Todos os avisos/recomendações da consulta: segurança calórica, condições
    *  de saúde informadas, sono/estresse e dieta restritiva — nessa ordem de prioridade. */
   avisos: string[];
+  /** Os mesmos avisos acima, reorganizados em texto corrido por tema (visão
+   *  geral, condições de saúde, hábitos, alimentação) — pra soar como um
+   *  nutricionista fechando a consulta, não uma lista de alertas de sistema.
+   *  100% determinístico: reaproveita as mesmas frases já testadas, sem IA. */
+  resumo: string;
+}
+
+const OBJETIVO_TEXTO: Record<ObjetivoNutricional, string> = {
+  emagrecimento: "emagrecer",
+  manutencao: "manter seu peso atual",
+  ganho_massa: "ganhar massa muscular",
+  saude_geral: "cuidar da sua saúde de forma geral",
+  performance_esportiva: "melhorar sua performance esportiva",
+};
+
+/**
+ * Monta o resumo em texto corrido descrito acima. Determinístico: junta as
+ * mesmas frases já geradas pelas funções avaliar... e identificar... (já cobertas
+ * por teste individualmente) em blocos por tema, em vez de reescrever tudo
+ * do zero — assim nunca perde nem distorce um dado de segurança.
+ */
+function montarResumoConsulta(params: {
+  imc: number;
+  classificacaoImc: string;
+  metaCalorica: number;
+  objetivo: ObjetivoNutricional;
+  avisoSeguranca: string | null;
+  avisosCondicoes: string[];
+  avisosGestacaoCondicao: string[];
+  avisosObjetivoRisco: string[];
+  avisosAlcool: string[];
+  avisosTabagismo: string[];
+  avisosSono: string[];
+  avisosDieta: string[];
+  avisosMedicamentos: string[];
+}): string {
+  const paragrafos: string[] = [];
+
+  const objetivoTexto = OBJETIVO_TEXTO[params.objetivo];
+  const abertura =
+    `Com base no que você me contou, seu IMC está em ${params.imc} (${params.classificacaoImc.toLowerCase()}) ` +
+    `e vamos trabalhar com foco em ${objetivoTexto}.`;
+  paragrafos.push(
+    params.avisoSeguranca
+      ? `${abertura} ${params.avisoSeguranca}`
+      : `${abertura} Sua meta calórica diária ficou em ${params.metaCalorica} kcal.`
+  );
+
+  const blocoCondicoes = [
+    ...params.avisosGestacaoCondicao,
+    ...params.avisosCondicoes,
+    ...params.avisosObjetivoRisco,
+  ];
+  if (blocoCondicoes.length > 0) {
+    paragrafos.push(`Sobre suas condições de saúde: ${blocoCondicoes.join(" ")}`);
+  }
+
+  const blocoHabitos = [...params.avisosAlcool, ...params.avisosTabagismo, ...params.avisosSono];
+  if (blocoHabitos.length > 0) {
+    paragrafos.push(`Sobre seus hábitos: ${blocoHabitos.join(" ")}`);
+  }
+
+  const blocoAlimentacao = [...params.avisosDieta, ...params.avisosMedicamentos];
+  if (blocoAlimentacao.length > 0) {
+    paragrafos.push(blocoAlimentacao.join(" "));
+  }
+
+  paragrafos.push(
+    "O plano alimentar já foi montado em cima dessas metas — qualquer dúvida ou mudança, é só voltar numa consulta de retorno."
+  );
+
+  return paragrafos.join("\n\n");
 }
 
 /** Executa a bateria completa de cálculos a partir dos dados da consulta. */
@@ -657,7 +729,23 @@ export function gerarResultadoAvaliacao(
     ...avisosMedicamentos,
   ].filter((a): a is string => Boolean(a));
 
-  return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl, avisos };
+  const resumo = montarResumoConsulta({
+    imc,
+    classificacaoImc,
+    metaCalorica,
+    objetivo: dados.objetivo,
+    avisoSeguranca,
+    avisosCondicoes,
+    avisosGestacaoCondicao,
+    avisosObjetivoRisco,
+    avisosAlcool,
+    avisosTabagismo,
+    avisosSono,
+    avisosDieta,
+    avisosMedicamentos,
+  });
+
+  return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl, avisos, resumo };
 }
 
 function arredondar(valor: number, casas: number): number {

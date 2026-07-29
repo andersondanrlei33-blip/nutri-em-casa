@@ -331,6 +331,47 @@ export function avaliarDietaRestritiva(restricoesAlimentares: string[]): string[
 }
 
 /**
+ * Quando o paciente está com obesidade (IMC >= 30) e tem uma condição
+ * cardiometabólica (hipertensão, colesterol alto ou diabetes), mas NÃO
+ * escolheu "emagrecimento" como objetivo, um nutricionista normalmente
+ * comentaria isso na consulta — mesmo pequenas perdas de peso (5-10%)
+ * costumam melhorar bastante esses quadros. Isso é só uma sugestão em
+ * texto: nunca força déficit calórico nem substitui o objetivo escolhido
+ * pelo paciente (gestante/lactante/TA já são tratadas à parte e não entram aqui).
+ */
+export function avaliarObjetivoVsRiscoCardiometabolico(
+  imc: number,
+  objetivo: ObjetivoNutricional,
+  condicoes: CondicaoSaude[],
+  condicaoEspecial: CondicaoEspecial = {}
+): string[] {
+  const condicoesCardiometabolicas: CondicaoSaude[] = [
+    "hipertensao",
+    "colesterol_alto",
+    "diabetes_tipo1",
+    "diabetes_tipo2",
+  ];
+  const temCondicaoRelevante = condicoes.some((c) => condicoesCardiometabolicas.includes(c));
+  const { gestante, lactante, historicoTranstornoAlimentar } = condicaoEspecial;
+
+  if (
+    imc >= 30 &&
+    objetivo !== "emagrecimento" &&
+    temCondicaoRelevante &&
+    !gestante &&
+    !lactante &&
+    !historicoTranstornoAlimentar
+  ) {
+    return [
+      "Seu IMC está na faixa de obesidade e você informou uma condição associada a isso (hipertensão, colesterol " +
+        "alto ou diabetes). Mesmo que seu objetivo atual não seja emagrecimento, vale conversar com um nutricionista " +
+        "sobre uma perda de peso moderada — costuma melhorar bastante esses quadros.",
+    ];
+  }
+  return [];
+}
+
+/**
  * Relação cintura-quadril (RCQ) — indicador clássico de risco cardiovascular
  * quando as duas medidas estão disponíveis. Referências de corte (OMS):
  * mulher ≥0.85 e homem ≥0.90 já indicam risco aumentado.
@@ -393,10 +434,19 @@ export function gerarResultadoAvaliacao(
   const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade);
   const avisosSono = avaliarSonoEEstresse(dados.qualidadeSono ?? null, dados.nivelEstresse ?? null);
   const avisosDieta = avaliarDietaRestritiva(dados.restricoesAlimentares ?? []);
+  const avisosObjetivoRisco = avaliarObjetivoVsRiscoCardiometabolico(imc, dados.objetivo, dados.condicoesSaude ?? [], {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
+  });
 
-  const avisos = [avisoSeguranca, ...avisosCondicoes, ...avisosSono, ...avisosDieta].filter(
-    (a): a is string => Boolean(a)
-  );
+  const avisos = [
+    avisoSeguranca,
+    ...avisosCondicoes,
+    ...avisosSono,
+    ...avisosDieta,
+    ...avisosObjetivoRisco,
+  ].filter((a): a is string => Boolean(a));
 
   return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl, avisos };
 }

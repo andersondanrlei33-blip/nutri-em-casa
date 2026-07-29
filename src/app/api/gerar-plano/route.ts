@@ -180,6 +180,7 @@ export async function POST(request: Request) {
       nome_refeicao: nomeExibido.slice(0, 250),
       horario: refeicao.horario,
       quantidade_porcoes: refeicao.quantidade_porcoes ?? 1,
+      categoria: receitaVinculada?.categoria ?? refeicao.categoria,
       ordem: indice,
     };
   });

@@ -19,6 +19,11 @@ import {
   avaliarSonoEEstresse,
   avaliarDietaRestritiva,
   avaliarObjetivoVsRiscoCardiometabolico,
+  avaliarConsumoAlcool,
+  avaliarMedicamentos,
+  avaliarGestacaoComCondicao,
+  identificarCondicaoClinicaComplexa,
+  avaliarTabagismo,
   calcularRCQ,
   gerarResultadoAvaliacao,
 } from "./calculations.ts";
@@ -118,6 +123,45 @@ test("Macros somam aproximadamente a meta calórica", () => {
 test("Água recomendada soma extra para atividade moderada+", () => {
   assert.equal(calcularAguaRecomendada(70, "sedentario"), 2450);
   assert.equal(calcularAguaRecomendada(70, "moderado"), 2950);
+});
+
+test("Água recomendada soma extra pra gestante e lactante", () => {
+  assert.equal(calcularAguaRecomendada(70, "sedentario", { gestante: true }), 2750); // 2450 + 300
+  assert.equal(calcularAguaRecomendada(70, "sedentario", { lactante: true }), 3250); // 2450 + 800
+  assert.equal(calcularAguaRecomendada(70, "sedentario"), 2450); // sem alteração no comportamento antigo
+});
+
+test("Consumo de álcool: gestante/lactante sempre gera aviso (exceto 'nunca')", () => {
+  assert.equal(avaliarConsumoAlcool("nunca", [], true, false).length, 0);
+  assert.ok(avaliarConsumoAlcool("raramente", [], true, false)[0].includes("gravidez"));
+  assert.ok(avaliarConsumoAlcool("moderado", [], false, true)[0].includes("gravidez"));
+});
+
+test("Consumo de álcool: fora da gestação, só avisa em moderado/frequente", () => {
+  assert.equal(avaliarConsumoAlcool("nunca", [], false, false).length, 0);
+  assert.equal(avaliarConsumoAlcool("raramente", [], false, false).length, 0);
+  assert.equal(avaliarConsumoAlcool("moderado", [], false, false).length, 1);
+  assert.equal(avaliarConsumoAlcool("frequente", [], false, false).length, 1);
+});
+
+test("Consumo de álcool frequente + diabetes/hipertensão soma avisos extras", () => {
+  const comDiabetes = avaliarConsumoAlcool("frequente", ["diabetes_tipo2"], false, false);
+  assert.equal(comDiabetes.length, 2);
+  const comHipertensao = avaliarConsumoAlcool("frequente", ["hipertensao"], false, false);
+  assert.equal(comHipertensao.length, 2);
+});
+
+test("Medicamentos em uso geram disclaimer só quando a lista não está vazia", () => {
+  assert.equal(avaliarMedicamentos([]).length, 0);
+  assert.equal(avaliarMedicamentos(["metformina"]).length, 1);
+});
+
+test("Gestação/amamentação + condição crônica gera aviso combinado", () => {
+  assert.equal(avaliarGestacaoComCondicao(false, false, ["diabetes_tipo2"]).length, 0);
+  assert.equal(avaliarGestacaoComCondicao(true, false, []).length, 0);
+  const aviso = avaliarGestacaoComCondicao(true, false, ["diabetes_tipo2"]);
+  assert.equal(aviso.length, 1);
+  assert.ok(aviso[0].includes("gravidez"));
 });
 
 test("gerarResultadoAvaliacao integra todo o pipeline sem erros", () => {
@@ -222,6 +266,52 @@ test("Aviso de risco cardiometabólico NÃO dispara para gestante/lactante/hist�
     }).length,
     0
   );
+});
+
+test("identificarCondicaoClinicaComplexa reconhece termos de risco (com/sem acento)", () => {
+  assert.equal(identificarCondicaoClinicaComplexa(null), null);
+  assert.equal(identificarCondicaoClinicaComplexa(""), null);
+  assert.equal(identificarCondicaoClinicaComplexa("gastrite"), null);
+  assert.ok(identificarCondicaoClinicaComplexa("fiz cirurgia bariátrica ano passado")?.includes("bariátrica"));
+  assert.ok(identificarCondicaoClinicaComplexa("Insuficiência Cardíaca")?.includes("líquidos"));
+  assert.ok(identificarCondicaoClinicaComplexa("em quimioterapia")?.includes("oncológico"));
+  assert.ok(identificarCondicaoClinicaComplexa("doença de Crohn")?.includes("inflamatória"));
+});
+
+test("calcularMetaCalorica força manutenção quando há condição clínica complexa", () => {
+  const resultado = calcularMetaCalorica(2000, "emagrecimento", "feminino", {
+    condicaoClinicaComplexa: "cirurgia bariátrica",
+  });
+  assert.equal(resultado.valor, 2000);
+  assert.ok(resultado.avisoSeguranca?.includes("bariátrica"));
+});
+
+test("gerarResultadoAvaliacao bloqueia déficit quando 'outra condição' menciona algo complexo", () => {
+  const resultado = gerarResultadoAvaliacao({
+    pesoKg: 80,
+    alturaCm: 170,
+    idade: 40,
+    genero: "feminino",
+    nivelAtividade: "leve",
+    objetivo: "emagrecimento",
+    condicoesSaudeOutras: "fiz bypass gástrico há 2 anos",
+  });
+  assert.equal(resultado.metaCalorica, resultado.tdee);
+  assert.ok(resultado.avisos.some((a) => a.includes("bariátrica")));
+});
+
+test("Tabagismo: nunca/ex-fumante não geram aviso; fumante gera aviso de vitamina C", () => {
+  assert.equal(avaliarTabagismo("nunca", []).length, 0);
+  assert.equal(avaliarTabagismo("ex_fumante", []).length, 0);
+  const aviso = avaliarTabagismo("fumante", []);
+  assert.equal(aviso.length, 1);
+  assert.ok(aviso[0].includes("vitamina C"));
+});
+
+test("Tabagismo + condição cardiometabólica soma aviso de risco cardiovascular", () => {
+  const aviso = avaliarTabagismo("fumante", ["hipertensao"]);
+  assert.equal(aviso.length, 2);
+  assert.ok(aviso[1].includes("cardiovascular"));
 });
 
 test("RCQ classifica risco por gênero", () => {

@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --experimental-strip-types src/lib/nutrition/calculations.test.ts"
+    "test": "node --experimental-strip-types src/lib/nutrition/calculations.test.ts && node --experimental-strip-types src/lib/nutrition/receitaMatching.test.ts"
   },
   "dependencies": {
     "next": "16.2.12",

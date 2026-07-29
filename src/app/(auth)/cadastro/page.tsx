@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, comTimeout } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FieldError } from "@/components/ui/Input";
 import { toast } from "@/components/ui/Toast";
@@ -27,23 +27,30 @@ export default function CadastroPage() {
 
     setCarregando(true);
     const supabase = createClient();
-    const { error } = await supabase.auth.signUp({
-      email,
-      password: senha,
-      options: {
-        data: { nome },
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/consulta`,
-      },
-    });
+    try {
+      const { error } = await comTimeout(
+        supabase.auth.signUp({
+          email,
+          password: senha,
+          options: {
+            data: { nome },
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=/consulta`,
+          },
+        })
+      );
 
-    setCarregando(false);
-    if (error) {
-      setErro(traduzirErro(error.message));
-      return;
+      setCarregando(false);
+      if (error) {
+        setErro(traduzirErro(error.message));
+        return;
+      }
+
+      toast.sucesso("Conta criada! Vamos começar sua consulta nutricional.");
+      router.push("/consulta");
+    } catch (erro) {
+      setCarregando(false);
+      setErro(erro instanceof Error ? erro.message : "Não foi possível criar a conta. Tente novamente.");
     }
-
-    toast.sucesso("Conta criada! Vamos começar sua consulta nutricional.");
-    router.push("/consulta");
   }
 
   return (

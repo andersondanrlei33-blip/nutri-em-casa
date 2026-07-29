@@ -123,6 +123,7 @@ export async function POST(request: Request) {
       lactante: dados.lactante,
       historico_transtorno_alimentar: dados.historico_transtorno_alimentar,
       ajuste_seguranca: resultado.avisos.length > 0 ? resultado.avisos.join("\n\n") : null,
+      resumo: resultado.resumo,
       imc: resultado.imc,
       classificacao_imc: resultado.classificacaoImc,
       tmb: resultado.tmb,

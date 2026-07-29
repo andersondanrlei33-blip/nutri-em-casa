@@ -624,6 +624,7 @@ function montarResumoConsulta(params: {
   avisosSono: string[];
   avisosDieta: string[];
   avisosMedicamentos: string[];
+  observacoesPaciente?: string | null;
 }): string {
   const paragrafos: string[] = [];
 
@@ -656,6 +657,12 @@ function montarResumoConsulta(params: {
     paragrafos.push(blocoAlimentacao.join(" "));
   }
 
+  if (params.observacoesPaciente?.trim()) {
+    paragrafos.push(
+      `Você também comentou: "${params.observacoesPaciente.trim()}" — vou levar isso em conta no seu plano.`
+    );
+  }
+
   paragrafos.push(
     "O plano alimentar já foi montado em cima dessas metas — qualquer dúvida ou mudança, é só voltar numa consulta de retorno."
   );
@@ -676,6 +683,7 @@ export function gerarResultadoAvaliacao(
     medicamentosEmUso?: string[];
     condicoesSaudeOutras?: string | null;
     tabagismo?: StatusTabagismo;
+    observacoesPaciente?: string | null;
   } & CondicaoEspecial
 ): ResultadoAvaliacao {
   const imc = calcularIMC(dados);
@@ -743,6 +751,7 @@ export function gerarResultadoAvaliacao(
     avisosSono,
     avisosDieta,
     avisosMedicamentos,
+    observacoesPaciente: dados.observacoesPaciente,
   });
 
   return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl, avisos, resumo };

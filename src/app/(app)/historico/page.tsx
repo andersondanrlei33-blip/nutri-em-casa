@@ -1,4 +1,5 @@
-import { History, Stethoscope, Scale, Dumbbell, Ruler, Moon, Smile } from "lucide-react";
+import Link from "next/link";
+import { History, Stethoscope, Scale, Dumbbell, Ruler, Moon, Smile, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -17,6 +18,7 @@ interface EventoHistorico {
   titulo: string;
   descricao: string;
   icone: typeof History;
+  href?: string;
 }
 
 export default async function HistoricoPage() {
@@ -42,6 +44,7 @@ export default async function HistoricoPage() {
       titulo: "Consulta nutricional realizada",
       descricao: `IMC ${a.imc} (${a.classificacao_imc}) · Meta calórica ${a.meta_calorica} kcal`,
       icone: Stethoscope,
+      href: `/historico/consulta/${a.id}`,
     })),
     ...((pesos ?? []) as RegistroPeso[]).map((p) => ({
       data: p.data,
@@ -98,18 +101,35 @@ export default async function HistoricoPage() {
       ) : (
         <Card>
           <CardContent className="divide-y divide-border">
-            {eventos.map((evento, i) => (
-              <div key={i} className="flex gap-3 py-4 first:pt-0 last:pb-0">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-                  <evento.icone className="h-4 w-4" />
+            {eventos.map((evento, i) => {
+              const conteudo = (
+                <>
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                    <evento.icone className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">{evento.titulo}</p>
+                    <p className="text-xs text-muted">{evento.descricao}</p>
+                    <p className="mt-0.5 text-xs text-muted">{formatarData(evento.data, "dd/MM/yyyy 'às' HH:mm")}</p>
+                  </div>
+                  {evento.href && <ChevronRight className="h-4 w-4 shrink-0 self-center text-muted" />}
+                </>
+              );
+
+              return evento.href ? (
+                <Link
+                  key={i}
+                  href={evento.href}
+                  className="-mx-1 flex gap-3 rounded-lg px-1 py-4 transition-colors first:pt-0 last:pb-0 hover:bg-black/[0.02]"
+                >
+                  {conteudo}
+                </Link>
+              ) : (
+                <div key={i} className="flex gap-3 py-4 first:pt-0 last:pb-0">
+                  {conteudo}
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">{evento.titulo}</p>
-                  <p className="text-xs text-muted">{evento.descricao}</p>
-                  <p className="mt-0.5 text-xs text-muted">{formatarData(evento.data, "dd/MM/yyyy 'às' HH:mm")}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       )}

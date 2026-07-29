@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AvaliacaoNutricional, CategoriaReceita, DiaSemana, Receita } from "@/types/domain";
+import type { AvaliacaoNutricional, CategoriaReceita, CondicaoSaude, DiaSemana, Receita } from "@/types/domain";
 import { getAnthropicClient, NUTRI_MODEL } from "@/lib/ai/anthropicClient";
 import {
   construirFiltro,
@@ -79,6 +79,40 @@ export async function gerarPlanoAlimentar(
   return gerarPlanoTemplate(avaliacao, receitasDisponiveis);
 }
 
+/**
+ * Orientações de seleção de alimentos por condição de saúde — usadas no
+ * prompt da IA. Antes dessa função, condições de saúde só geravam um aviso
+ * de texto separado (avaliarCondicoesSaude em calculations.ts) que nunca
+ * chegava na geração do cardápio: a IA escolhia comida olhando só pra
+ * preferências do paciente, sem saber que ele tinha diabetes/colesterol
+ * alto/hipertensão. Essas instruções têm prioridade sobre preferência
+ * alimentar quando as duas conflitarem (ex: paciente diabético que prefere
+ * doce — a IA deve moderar o doce, não ignorar a condição).
+ */
+function construirOrientacoesCondicoesSaude(condicoes: CondicaoSaude[]): string[] {
+  const orientacoes: string[] = [];
+  if (condicoes.includes("diabetes_tipo1") || condicoes.includes("diabetes_tipo2")) {
+    orientacoes.push(
+      "Diabetes: priorize carboidratos complexos e com fibra; evite ou reduza fortemente açúcar refinado/doces " +
+        "concentrados (ex: doce de leite, brigadeiro, mel em excesso, refrigerante). Se o paciente disse preferir " +
+        "algo assim, inclua no máximo em 1 refeição da semana, em porção pequena, nunca repetido em vários dias."
+    );
+  }
+  if (condicoes.includes("colesterol_alto")) {
+    orientacoes.push(
+      "Colesterol alto: priorize gorduras insaturadas (azeite, peixes, castanhas, abacate) e evite ou reduza " +
+        "receitas fritas ou muito ricas em gordura saturada (frituras, embutidos, carnes muito gordurosas)."
+    );
+  }
+  if (condicoes.includes("hipertensao")) {
+    orientacoes.push(
+      "Hipertensão: modere receitas com alto teor de sódio (embutidos, enlatados, temperos industrializados, " +
+        "salgadinhos); prefira preparações com pouco sal."
+    );
+  }
+  return orientacoes;
+}
+
 interface CandidataResumo {
   id: string;
   nome: string;
@@ -119,6 +153,8 @@ async function gerarPlanoComIA(
     }));
   }
 
+  const orientacoesCondicoes = construirOrientacoesCondicoesSaude(avaliacao.condicoes_saude ?? []);
+
   const prompt = `Você é uma nutricionista virtual especialista do app "Nutri em Casa".
 Crie um plano alimentar semanal (segunda a domingo) para o paciente abaixo, respeitando
 EXATAMENTE as metas calóricas e de macronutrientes calculadas.
@@ -130,7 +166,15 @@ Dados do paciente:
 - Alergias: ${avaliacao.alergias.join(", ") || "nenhuma"}
 - Alimentos evitados: ${avaliacao.alimentos_evitados.join(", ") || "nenhum"}
 - Preferências alimentares: ${avaliacao.preferencias_alimentares.join(", ") || "nenhuma"}
-
+${
+  orientacoesCondicoes.length > 0
+    ? `\nCONDIÇÕES DE SAÚDE — estas orientações têm PRIORIDADE sobre as preferências alimentares acima quando ` +
+      `houver conflito (ex: paciente prefere doce mas tem diabetes → modere o doce, não ignore a condição):\n` +
+      orientacoesCondicoes.map((o) => `- ${o}`).join("\n") +
+      `\nSe precisar reduzir ou não atender uma preferência do paciente por causa de uma condição de saúde, ` +
+      `explique isso brevemente em "observacoes_nutricionista".\n`
+    : ""
+}
 Metas diárias (NÃO ultrapassar em mais de 5%):
 - Calorias: ${avaliacao.meta_calorica} kcal
 - Proteína: ${avaliacao.meta_proteina_g} g

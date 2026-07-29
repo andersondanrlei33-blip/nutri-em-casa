@@ -206,5 +206,6 @@ export async function POST(request: Request) {
     plano,
     observacoesNutricionista: planoGerado.observacoes_nutricionista,
     avisos: resultado.avisos,
+    resumoConsulta: resultado.resumo,
   });
 }

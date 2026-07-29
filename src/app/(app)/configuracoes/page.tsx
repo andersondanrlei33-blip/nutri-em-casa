@@ -1,113 +1,80 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useUser } from "@/hooks/useUser";
+import { Menu, LogOut, User as UserIcon, HelpCircle } from "lucide-react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { toast } from "@/components/ui/Toast";
-import { formatarData } from "@/lib/utils/date";
-import type { PlanoAlimentar } from "@/types/domain";
+import { useUser } from "@/hooks/useUser";
+import { diasRestantesTrial } from "@/lib/subscriptions/access";
+import { Badge } from "@/components/ui/Badge";
+import { useTourStore } from "@/lib/tour/store";
 
-export default function ConfiguracoesPage() {
-  const { user } = useUser();
-  const supabase = createClient();
+export function Topbar({ aoAbrirMenu }: { aoAbrirMenu: () => void }) {
+  const { perfil, assinatura } = useUser();
+  const iniciarTour = useTourStore((s) => s.iniciar);
 
-  const [planos, setPlanos] = useState<PlanoAlimentar[]>([]);
-  const [carregando, setCarregando] = useState(true);
-
-  useEffect(() => {
-    if (!user) return;
-    supabase
-      .from("planos_alimentares")
-      .select("*")
-      .eq("usuario_id", user.id)
-      .order("criado_em", { ascending: false })
-      .then(({ data }) => {
-        setPlanos((data ?? []) as PlanoAlimentar[]);
-        setCarregando(false);
-      });
-  }, [user]);
-
-  async function ativarPlano(id: string) {
-    if (!user) return;
-    await supabase.from("planos_alimentares").update({ ativo: false }).eq("usuario_id", user.id);
-    const { error } = await supabase.from("planos_alimentares").update({ ativo: true }).eq("id", id);
-    if (error) return toast.erro("Erro ao ativar plano.");
-    setPlanos((prev) => prev.map((p) => ({ ...p, ativo: p.id === id })));
-    toast.sucesso("Plano alimentar ativado.");
-  }
-
-  async function sairDeTodosDispositivos() {
-    await supabase.auth.signOut({ scope: "global" });
-    // Navegação dura, não router.push — evita a corrida onde o middleware
-    // ainda vê o cookie de sessão antigo e manda o usuário de volta pro app.
+  async function sair() {
+    const supabase = createClient();
+    // supabase.auth.signOut() pode ficar pendurado (ex: lock de auth travado
+    // entre abas, extensão bloqueando a chamada de rede) e nunca resolver —
+    // isso deixava o botão "sem fazer nada" pro usuário. Damos no máximo 3s
+    // pra ele terminar; se não terminar, redirecionamos assim mesmo em vez de
+    // travar a pessoa dentro do app.
+    try {
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
+    } catch {
+      // Mesmo se signOut() der erro, ainda assim seguimos pro login.
+    }
+    // Navegação "dura" (recarrega a página) em vez de router.push: garante que
+    // o middleware veja os cookies de sessão já limpos na próxima requisição,
+    // evitando a corrida onde a navegação client-side chega antes da limpeza
+    // do cookie terminar e o middleware manda o usuário de volta pro app.
     window.location.href = "/login";
   }
 
+  const diasTrial = assinatura ? diasRestantesTrial(assinatura) : 0;
+
   return (
-    <div className="mx-auto max-w-lg space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Configurações</h1>
-        <p className="mt-1 text-sm text-muted">Gerencie seus planos alimentares e sua conta.</p>
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-white/80 px-4 backdrop-blur sm:px-6">
+      <button onClick={aoAbrirMenu} className="text-muted md:hidden">
+        <Menu className="h-5 w-5" />
+      </button>
+
+      <div className="hidden md:block" />
+
+      <div className="flex items-center gap-3">
+        {assinatura?.plano === "trial" && diasTrial > 0 && (
+          <Badge tom="accent">{diasTrial} dia{diasTrial === 1 ? "" : "s"} de trial restantes</Badge>
+        )}
+        <Link
+          href="/perfil"
+          className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-black/[0.03]"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+            <UserIcon className="h-4 w-4" />
+          </div>
+          <span className="hidden text-sm font-medium text-foreground sm:inline">
+            {perfil?.nome || "Meu perfil"}
+          </span>
+        </Link>
+        <button
+          onClick={iniciarTour}
+          data-tour="botao-ajuda"
+          className="rounded-xl p-2 text-muted hover:bg-black/[0.03] hover:text-brand-600"
+          title="Ver tutorial"
+        >
+          <HelpCircle className="h-4.5 w-4.5" />
+        </button>
+        <button
+          onClick={sair}
+          className="rounded-xl p-2 text-muted hover:bg-black/[0.03] hover:text-danger-500"
+          title="Sair"
+        >
+          <LogOut className="h-4.5 w-4.5" />
+        </button>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Meus planos alimentares</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {carregando ? (
-            <p className="text-sm text-muted">Carregando...</p>
-          ) : planos.length === 0 ? (
-            <p className="text-sm text-muted">Nenhum plano alimentar criado ainda.</p>
-          ) : (
-            <ul className="space-y-2">
-              {planos.map((plano) => (
-                <li key={plano.id} className="flex items-center justify-between rounded-xl border border-border p-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{plano.nome}</p>
-                    <p className="text-xs text-muted">Criado em {formatarData(plano.criado_em)}</p>
-                  </div>
-                  {plano.ativo ? (
-                    <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-medium text-brand-700">Ativo</span>
-                  ) : (
-                    <Button variante="secundaria" tamanho="sm" onClick={() => ativarPlano(plano.id)}>
-                      Ativar
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Segurança</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Button variante="secundaria" onClick={sairDeTodosDispositivos}>
-            Sair de todos os dispositivos
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="border-danger-500/30">
-        <CardHeader>
-          <CardTitle className="text-danger-500">Zona de risco</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-3 text-sm text-muted">
-            Para excluir sua conta e todos os seus dados permanentemente, entre em contato com o
-            suporte. Essa ação não pode ser desfeita.
-          </p>
-          <Button variante="perigo" disabled>
-            Excluir minha conta
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+    </header>
   );
 }

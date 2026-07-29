@@ -29,6 +29,22 @@ function limparCookiesDeSessao() {
   });
 }
 
+/**
+ * Executa uma promise com um limite de tempo — evita que uma chamada de auth
+ * (login, cadastro, buscar usuário) fique pendurada pra sempre em caso de
+ * rede instável ou de um lock interno do supabase-js travado, como aconteceu
+ * com o signOut() antes da correção. Se o tempo esgotar, rejeita com uma
+ * mensagem amigável em vez de deixar o botão "carregando" para sempre.
+ */
+export function comTimeout<T>(promessa: Promise<T>, ms = 8000): Promise<T> {
+  return Promise.race([
+    promessa,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Tempo esgotado. Verifique sua conexão e tente novamente.")), ms)
+    ),
+  ]);
+}
+
 interface OpcoesSignOut {
   escopo?: "global" | "local" | "others";
 }

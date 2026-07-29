@@ -1,4 +1,4 @@
-import { Target } from "lucide-react";
+import { Target, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { estimarProgressoMeta } from "@/lib/nutrition/metaProgresso";
@@ -27,12 +27,13 @@ export function CardMetaPeso({ pesoAtual, pesoMeta, pesoInicial, diasDecorridos 
     );
   }
 
-  const { faltamKg, precisaPerder, direcaoCorreta, semanasEstimadas } = estimarProgressoMeta({
-    pesoAtual,
-    pesoMeta,
-    pesoInicial,
-    diasDecorridos,
-  });
+  const { faltamKg, precisaPerder, direcaoCorreta, semanasEstimadas, ritmoSemanalKg, ritmoSeguro } =
+    estimarProgressoMeta({
+      pesoAtual,
+      pesoMeta,
+      pesoInicial,
+      diasDecorridos,
+    });
 
   const progressoTotal = Math.abs(pesoInicial - pesoMeta);
   const progressoFeito = Math.max(0, progressoTotal - faltamKg);
@@ -75,6 +76,14 @@ export function CardMetaPeso({ pesoAtual, pesoMeta, pesoInicial, diasDecorridos 
                   ? "Continue registrando seu peso para vermos uma estimativa de prazo."
                   : `Seu peso está indo na direção contrária à meta (${precisaPerder ? "precisa perder" : "precisa ganhar"} peso). Vale revisar isso numa consulta de retorno.`}
             </p>
+            {direcaoCorreta && ritmoSemanalKg != null && !ritmoSeguro && (
+              <p className="mt-3 flex items-start gap-2 rounded-xl bg-warning-500/10 px-4 py-3 text-sm text-foreground">
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-500" />
+                Seu ritmo atual é de cerca de {ritmoSemanalKg}kg por semana — mais rápido que o recomendado com
+                segurança (referência usual: até ~1% do peso corporal por semana). Vale conversar com um
+                nutricionista sobre isso antes de continuar nesse ritmo.
+              </p>
+            )}
           </>
         )}
       </CardContent>

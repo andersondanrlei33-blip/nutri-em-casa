@@ -161,17 +161,28 @@ export async function POST(request: Request) {
     (receitasDisponiveis ?? []) as Receita[]
   );
 
-  const linhasRefeicoes = planoGerado.refeicoes.map((refeicao, indice) => ({
-    plano_id: plano.id,
-    receita_id: refeicao.receita_id ?? null,
-    dia_semana: refeicao.dia_semana,
-    nome_refeicao: refeicao.receita_id
-      ? refeicao.nome_refeicao.slice(0, 250)
-      : `${refeicao.nome_refeicao} — ${refeicao.descricao}`.slice(0, 250),
-    horario: refeicao.horario,
-    quantidade_porcoes: refeicao.quantidade_porcoes ?? 1,
-    ordem: indice,
-  }));
+  // Mapa de id -> receita, pra usar o nome REAL da receita da biblioteca em
+  // vez de confiar no "nome_refeicao" que a IA devolve — vimos na prática
+  // a IA às vezes usar só o rótulo do horário ("Café da manhã") como nome,
+  // o que fazia o Plano Alimentar mostrar cards sem dizer o que comer.
+  const receitasPorId = new Map((receitasDisponiveis ?? []).map((r) => [r.id, r as Receita]));
+
+  const linhasRefeicoes = planoGerado.refeicoes.map((refeicao, indice) => {
+    const receitaVinculada = refeicao.receita_id ? receitasPorId.get(refeicao.receita_id) : undefined;
+    const nomeExibido = receitaVinculada
+      ? receitaVinculada.nome
+      : refeicao.descricao?.trim() || refeicao.nome_refeicao;
+
+    return {
+      plano_id: plano.id,
+      receita_id: refeicao.receita_id ?? null,
+      dia_semana: refeicao.dia_semana,
+      nome_refeicao: nomeExibido.slice(0, 250),
+      horario: refeicao.horario,
+      quantidade_porcoes: refeicao.quantidade_porcoes ?? 1,
+      ordem: indice,
+    };
+  });
 
   const { error: erroRefeicoes } = await supabase.from("refeicoes_plano").insert(linhasRefeicoes);
   if (erroRefeicoes) {

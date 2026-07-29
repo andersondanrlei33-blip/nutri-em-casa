@@ -6,6 +6,7 @@ import {
   filtrarReceitasCompativeis,
   escolherReceita,
   textoContemAlergiaDoUsuario,
+  normalizar,
   type FiltroReceitas,
 } from "./receitaMatching";
 
@@ -143,9 +144,13 @@ ${JSON.stringify(resumoCandidatas, null, 2)}
 
 Para cada refeição, se houver uma receita adequada na lista da categoria correspondente,
 defina "receita_id" com o id exato dela e ajuste "quantidade_porcoes" (pode ser fracionário,
-ex: 1.5) para que as calorias da receita escalada cheguem perto do alvo da refeição.
+ex: 1.5) para que as calorias da receita escalada cheguem perto do alvo da refeição. Mesmo
+quando definir "receita_id", o campo "descricao" é OBRIGATÓRIO e nunca pode ser null — repita
+ali o nome da receita escolhida.
 Se NENHUMA receita da lista servir para aquele horário/categoria, defina "receita_id" como null
 e escreva uma "descricao" simples que NÃO cite nenhum alimento presente nas alergias do paciente.
+IMPORTANTE: o campo "dia_semana" deve ser exatamente um destes valores, SEM acento: "segunda",
+"terca", "quarta", "quinta", "sexta", "sabado", "domingo".
 
 Responda APENAS com um JSON válido no formato:
 {
@@ -174,6 +179,36 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
   if (!jsonMatch) throw new Error("Resposta da IA não continha JSON válido.");
 
   const bruto = JSON.parse(jsonMatch[0]);
+
+  // O modelo (Haiku) às vezes devolve "dia_semana" acentuado (ex: "terça",
+  // "sábado") mesmo pedindo sem acento no prompt, e às vezes deixa
+  // "descricao" como null quando já vinculou um receita_id, achando que não
+  // precisa repetir o texto. Normaliza os dois casos antes de validar contra
+  // o schema — derrubar o plano inteiro por isso seria jogar fora uma
+  // resposta boa por um detalhe de formatação.
+  const todasCandidatas = Object.values(resumoCandidatas).flat();
+  if (Array.isArray(bruto?.refeicoes)) {
+    bruto.refeicoes = bruto.refeicoes.map((refeicao: Record<string, unknown>) => {
+      const diaBruto = refeicao.dia_semana;
+      const diaNormalizado = typeof diaBruto === "string" ? normalizar(diaBruto) : diaBruto;
+      const receitaCorrespondente =
+        typeof refeicao.receita_id === "string"
+          ? todasCandidatas.find((r) => r.id === refeicao.receita_id)
+          : undefined;
+      const descricaoValida =
+        typeof refeicao.descricao === "string" && refeicao.descricao.trim() !== "";
+
+      return {
+        ...refeicao,
+        dia_semana: DIAS.includes(diaNormalizado as DiaSemana) ? diaNormalizado : diaBruto,
+        descricao: descricaoValida
+          ? refeicao.descricao
+          : (receitaCorrespondente?.nome ??
+            (typeof refeicao.nome_refeicao === "string" ? refeicao.nome_refeicao : "Refeição sugerida")),
+      };
+    });
+  }
+
   const plano = PlanoGeradoSchema.parse(bruto);
 
   // Segunda camada de segurança: nunca confiar cegamente no que a IA

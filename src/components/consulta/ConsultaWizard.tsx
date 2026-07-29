@@ -176,6 +176,9 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
       if (!respostas.peso_kg || !respostas.altura_cm || !respostas.idade) {
         return "Preencha peso, altura e idade para continuar.";
       }
+      if (Number(respostas.idade) < 18) {
+        return "O Nutri em Casa é destinado a maiores de 18 anos. Menores de idade devem buscar acompanhamento nutricional presencial com um profissional especializado.";
+      }
     }
     if (etapa === 3) {
       if (!respostas.restricoes_alimentares.trim() && !respostas.confirmou_sem_restricoes) {
@@ -346,7 +349,7 @@ export function ConsultaWizard({ avaliacaoAnterior }: { avaliacaoAnterior: Avali
                 </div>
                 <div>
                   <Label htmlFor="idade">Idade</Label>
-                  <Input id="idade" type="number" min={10} max={120} value={respostas.idade} onChange={(e) => atualizar("idade", e.target.value)} />
+                  <Input id="idade" type="number" min={18} max={120} value={respostas.idade} onChange={(e) => atualizar("idade", e.target.value)} />
                 </div>
                 <div>
                   <Label htmlFor="genero">Gênero</Label>

@@ -1,12 +1,14 @@
 import { z } from "zod";
-import type { AvaliacaoNutricional, CategoriaReceita, CondicaoSaude, DiaSemana, Receita } from "@/types/domain";
+import type { AvaliacaoNutricional, CategoriaReceita, CondicaoSaude, DiaSemana, IndicacaoSaudeReceita, Receita } from "@/types/domain";
 import { getAnthropicClient, NUTRI_MODEL } from "@/lib/ai/anthropicClient";
+import { identificarCondicaoClinicaComplexa } from "./calculations";
 import {
   construirFiltro,
   filtrarReceitasCompativeis,
   escolherReceita,
   textoContemAlergiaDoUsuario,
   normalizar,
+  INDICACOES_SAUDE_VOCABULARIO,
   type FiltroReceitas,
 } from "./receitaMatching";
 
@@ -117,7 +119,65 @@ function construirOrientacoesCondicoesSaude(condicoes: CondicaoSaude[]): string[
         "existe substituto do sal light (rico em potássio) recomendado para esse paciente."
     );
   }
+  if (condicoes.includes("hipotireoidismo")) {
+    orientacoes.push(
+      "Hipotireoidismo: garanta iodo adequado (sal iodado, peixes, ovos) sem exagerar; evite grandes quantidades " +
+        "de vegetais crucíferos crus (repolho, brócolis) na mesma refeição — cozidos não é problema; priorize " +
+        "fibra, que ajuda com a constipação comum nessa condição."
+    );
+  }
+  if (condicoes.includes("hipertireoidismo")) {
+    orientacoes.push(
+      "Hipertireoidismo: o metabolismo acelerado pode pedir mais calorias e proteína pra evitar perda de massa " +
+        "muscular; inclua boas fontes de cálcio (leite, iogurte, folhas verde-escuras); modere cafeína, que pode " +
+        "piorar sintomas como palpitação e ansiedade."
+    );
+  }
   return orientacoes;
+}
+
+/**
+ * Classifica o texto livre de "outra condição não listada" dentro do
+ * vocabulário FECHADO de indicações de receita — a IA escolhe apenas entre
+ * as tags existentes, nunca inventa uma regra nova (mesmo princípio de
+ * nunca dar liberdade total pra IA decidir algo de saúde sozinha). Só deve
+ * ser chamada depois de confirmar que o texto NÃO bateu com nenhum termo de
+ * condição clínica complexa (essas já vão pro modo seguro antes — ver
+ * calculations.ts::identificarCondicaoClinicaComplexa). Em qualquer erro ou
+ * resposta fora do esperado, retorna lista vazia — comportamento seguro,
+ * só significa que a receita não ganha a prioridade extra.
+ */
+async function classificarCondicaoLivre(texto: string): Promise<IndicacaoSaudeReceita[]> {
+  const anthropic = getAnthropicClient();
+  if (!anthropic) return [];
+
+  try {
+    const resposta = await anthropic.messages.create({
+      model: NUTRI_MODEL,
+      max_tokens: 100,
+      messages: [
+        {
+          role: "user",
+          content:
+            `Um paciente escreveu esta condição de saúde em texto livre numa consulta nutricional: "${texto}"\n\n` +
+            "Escolha APENAS entre estas tags (zero, uma ou mais, separadas por vírgula — responda \"nenhuma\" se " +
+            `nenhuma se aplicar):\n${INDICACOES_SAUDE_VOCABULARIO.join(", ")}\n\n` +
+            "Responda SOMENTE com as tags escolhidas (ou \"nenhuma\"), sem nenhuma explicação.",
+        },
+      ],
+    });
+
+    const textoResposta = resposta.content
+      .filter((bloco) => bloco.type === "text")
+      .map((bloco) => (bloco as { text: string }).text)
+      .join(" ");
+
+    const candidatas = textoResposta.split(",").map((t) => normalizar(t));
+    return INDICACOES_SAUDE_VOCABULARIO.filter((tag) => candidatas.some((c) => c.includes(tag)));
+  } catch (erro) {
+    console.error("Falha ao classificar condição livre, seguindo sem prioridade extra:", erro);
+    return [];
+  }
 }
 
 interface CandidataResumo {
@@ -135,6 +195,19 @@ async function gerarPlanoComIA(
 ): Promise<PlanoGerado> {
   const anthropic = getAnthropicClient()!;
   const filtro = construirFiltro(avaliacao);
+
+  // "Outra condição" em texto livre: só tentamos extrair uma indicação de
+  // receita dela quando NÃO for um caso de condição clínica complexa (essas
+  // já forçam o modo seguro lá em calculations.ts, e não faz sentido
+  // "otimizar receita" pra um caso que a mensagem é "procure um profissional").
+  if (
+    avaliacao.condicoes_saude_outras?.trim() &&
+    !identificarCondicaoClinicaComplexa(avaliacao.condicoes_saude_outras)
+  ) {
+    const tagsExtras = await classificarCondicaoLivre(avaliacao.condicoes_saude_outras);
+    tagsExtras.forEach((tag) => filtro.indicacoesPreferidas.add(tag));
+  }
+
   const templates = escolherTemplates(avaliacao.refeicoes_por_dia);
   const categorias = [...new Set(templates.map((t) => t.categoria))];
 

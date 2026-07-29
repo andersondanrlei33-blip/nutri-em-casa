@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, comTimeout } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FieldError } from "@/components/ui/Input";
 import { toast } from "@/components/ui/Toast";
@@ -31,16 +31,20 @@ function LoginForm() {
     setCarregando(true);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+    try {
+      const { error } = await comTimeout(supabase.auth.signInWithPassword({ email, password: senha }));
+      setCarregando(false);
+      if (error) {
+        setErro(traduzirErro(error.message));
+        return;
+      }
 
-    setCarregando(false);
-    if (error) {
-      setErro(traduzirErro(error.message));
-      return;
+      toast.sucesso("Login realizado com sucesso!");
+      router.push(searchParams.get("redirect") || "/dashboard");
+    } catch (erro) {
+      setCarregando(false);
+      setErro(erro instanceof Error ? erro.message : "Não foi possível entrar. Tente novamente.");
     }
-
-    toast.sucesso("Login realizado com sucesso!");
-    router.push(searchParams.get("redirect") || "/dashboard");
   }
 
   return (

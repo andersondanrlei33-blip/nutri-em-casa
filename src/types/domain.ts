@@ -101,6 +101,10 @@ export interface AvaliacaoNutricional {
   historico_transtorno_alimentar: boolean;
   /** Explicação de qualquer ajuste de segurança aplicado à meta calórica. */
   ajuste_seguranca: string | null;
+  /** Resumo em texto corrido da consulta (calculations.ts::montarResumoConsulta),
+   *  salvo no momento da geração pra exibir depois no Histórico exatamente
+   *  como foi mostrado na hora. Null em consultas anteriores a essa coluna. */
+  resumo: string | null;
   imc: number;
   classificacao_imc: string;
   tmb: number;

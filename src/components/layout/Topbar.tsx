@@ -14,7 +14,19 @@ export function Topbar({ aoAbrirMenu }: { aoAbrirMenu: () => void }) {
 
   async function sair() {
     const supabase = createClient();
-    await supabase.auth.signOut();
+    // supabase.auth.signOut() pode ficar pendurado (ex: lock de auth travado
+    // entre abas, extensão bloqueando a chamada de rede) e nunca resolver —
+    // isso deixava o botão "sem fazer nada" pro usuário. Damos no máximo 3s
+    // pra ele terminar; se não terminar, redirecionamos assim mesmo em vez de
+    // travar a pessoa dentro do app.
+    try {
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
+    } catch {
+      // Mesmo se signOut() der erro, ainda assim seguimos pro login.
+    }
     // Navegação "dura" (recarrega a página) em vez de router.push: garante que
     // o middleware veja os cookies de sessão já limpos na próxima requisição,
     // evitando a corrida onde a navegação client-side chega antes da limpeza

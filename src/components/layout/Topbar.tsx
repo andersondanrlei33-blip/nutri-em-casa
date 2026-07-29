@@ -2,7 +2,6 @@
 
 import { Menu, LogOut, User as UserIcon, HelpCircle } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/hooks/useUser";
 import { diasRestantesTrial } from "@/lib/subscriptions/access";
@@ -11,13 +10,16 @@ import { useTourStore } from "@/lib/tour/store";
 
 export function Topbar({ aoAbrirMenu }: { aoAbrirMenu: () => void }) {
   const { perfil, assinatura } = useUser();
-  const router = useRouter();
   const iniciarTour = useTourStore((s) => s.iniciar);
 
   async function sair() {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/login");
+    // Navegação "dura" (recarrega a página) em vez de router.push: garante que
+    // o middleware veja os cookies de sessão já limpos na próxima requisição,
+    // evitando a corrida onde a navegação client-side chega antes da limpeza
+    // do cookie terminar e o middleware manda o usuário de volta pro app.
+    window.location.href = "/login";
   }
 
   const diasTrial = assinatura ? diasRestantesTrial(assinatura) : 0;

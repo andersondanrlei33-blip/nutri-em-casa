@@ -170,6 +170,9 @@ export interface RefeicaoPlano {
   ordem: number;
   consumida: boolean;
   criado_em: string;
+  /** Categoria da refeição (café da manhã, almoço, lanche...) — null em
+   *  registros antigos gerados antes dessa coluna existir. */
+  categoria: CategoriaReceita | null;
 }
 
 export interface RegistroConsumo {

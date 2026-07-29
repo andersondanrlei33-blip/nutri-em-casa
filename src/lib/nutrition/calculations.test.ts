@@ -18,6 +18,7 @@ import {
   avaliarCondicoesSaude,
   avaliarSonoEEstresse,
   avaliarDietaRestritiva,
+  avaliarObjetivoVsRiscoCardiometabolico,
   calcularRCQ,
   gerarResultadoAvaliacao,
 } from "./calculations.ts";
@@ -190,6 +191,37 @@ test("Dieta vegana e vegetariana geram avisos de micronutrientes distintos", () 
   assert.equal(avaliarDietaRestritiva([]).length, 0);
   // vegano tem prioridade sobre vegetariano se ambos aparecerem por engano
   assert.ok(avaliarDietaRestritiva(["vegano", "vegetariano"])[0].includes("B12"));
+});
+
+test("Aviso de risco cardiometabólico dispara com obesidade + condição + objetivo != emagrecimento", () => {
+  const avisos = avaliarObjetivoVsRiscoCardiometabolico(32, "saude_geral", ["hipertensao"]);
+  assert.equal(avisos.length, 1);
+  assert.ok(avisos[0].includes("obesidade"));
+});
+
+test("Aviso de risco cardiometabólico NÃO dispara sem condição relevante", () => {
+  assert.equal(avaliarObjetivoVsRiscoCardiometabolico(32, "saude_geral", []).length, 0);
+});
+
+test("Aviso de risco cardiometabólico NÃO dispara se objetivo já é emagrecimento", () => {
+  assert.equal(avaliarObjetivoVsRiscoCardiometabolico(32, "emagrecimento", ["diabetes_tipo2"]).length, 0);
+});
+
+test("Aviso de risco cardiometabólico NÃO dispara com IMC abaixo de 30", () => {
+  assert.equal(avaliarObjetivoVsRiscoCardiometabolico(28, "saude_geral", ["colesterol_alto"]).length, 0);
+});
+
+test("Aviso de risco cardiometabólico NÃO dispara para gestante/lactante/histórico de TA", () => {
+  assert.equal(
+    avaliarObjetivoVsRiscoCardiometabolico(32, "manutencao", ["hipertensao"], { gestante: true }).length,
+    0
+  );
+  assert.equal(
+    avaliarObjetivoVsRiscoCardiometabolico(32, "manutencao", ["hipertensao"], {
+      historicoTranstornoAlimentar: true,
+    }).length,
+    0
+  );
 });
 
 test("RCQ classifica risco por gênero", () => {

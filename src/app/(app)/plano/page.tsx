@@ -149,7 +149,8 @@ export default function PlanoPage() {
       ...resto,
       plano_id: data.id,
     }));
-    await supabase.from("refeicoes_plano").insert(novasRefeicoes);
+    const { error: erroRefeicoes } = await supabase.from("refeicoes_plano").insert(novasRefeicoes);
+    if (erroRefeicoes) return toast.erro("Plano duplicado, mas houve erro ao copiar as refeições.");
     toast.sucesso("Semana duplicada como um novo plano (inativo). Ative-o em Configurações.");
   }
 

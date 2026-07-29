@@ -17,6 +17,7 @@ import {
   calcularAguaRecomendada,
   avaliarCondicoesSaude,
   avaliarSonoEEstresse,
+  avaliarDietaRestritiva,
   calcularRCQ,
   gerarResultadoAvaliacao,
 } from "./calculations.ts";
@@ -179,6 +180,16 @@ test("gerarResultadoAvaliacao combina avisos de condição de saúde e sono", ()
   });
   assert.equal(resultado.avisos.length, 2); // doença renal + sono ruim
   assert.ok(resultado.macros.proteinaG <= 70); // 1.0g/kg respeitado
+});
+
+test("Dieta vegana e vegetariana geram avisos de micronutrientes distintos", () => {
+  assert.equal(avaliarDietaRestritiva(["vegano"]).length, 1);
+  assert.ok(avaliarDietaRestritiva(["vegana"])[0].includes("B12"));
+  assert.ok(avaliarDietaRestritiva(["Vegetariano"])[0].includes("ferro"));
+  assert.equal(avaliarDietaRestritiva(["sem glúten"]).length, 0);
+  assert.equal(avaliarDietaRestritiva([]).length, 0);
+  // vegano tem prioridade sobre vegetariano se ambos aparecerem por engano
+  assert.ok(avaliarDietaRestritiva(["vegano", "vegetariano"])[0].includes("B12"));
 });
 
 test("RCQ classifica risco por gênero", () => {

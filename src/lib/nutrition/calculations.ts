@@ -15,6 +15,7 @@
  */
 
 import type { CondicaoSaude, Genero, NivelAtividade, ObjetivoNutricional } from "../../types/domain.ts";
+import { normalizar } from "./receitaMatching.ts";
 
 export interface DadosAntropometricos {
   pesoKg: number;
@@ -302,6 +303,34 @@ export function avaliarSonoEEstresse(qualidadeSono: number | null, nivelEstresse
 }
 
 /**
+ * Avisos nutricionais para dietas restritivas informadas em texto livre
+ * (vegetariano/vegano) — nutrientes que exigem atenção extra nesses casos
+ * e que um nutricionista sempre comenta na consulta. Reaproveita o mesmo
+ * `normalizar` usado pra casar receitas por tag de dieta, então reconhece
+ * "vegano", "vegana", "vegetariano", "vegetariana" com ou sem acento.
+ */
+export function avaliarDietaRestritiva(restricoesAlimentares: string[]): string[] {
+  const normalizadas = restricoesAlimentares.map(normalizar);
+  const eVegano = normalizadas.some((r) => r.includes("vegan"));
+  const eVegetariano = !eVegano && normalizadas.some((r) => r.includes("vegetarian"));
+
+  if (eVegano) {
+    return [
+      "Como sua dieta é vegana, fique atento à vitamina B12 (não existe em fontes vegetais — geralmente precisa de " +
+        "suplementação), além de ferro, cálcio, zinco e ômega-3, que exigem mais planejamento nesse tipo de dieta. " +
+        "Vale conversar com um nutricionista sobre suplementação.",
+    ];
+  }
+  if (eVegetariano) {
+    return [
+      "Como sua dieta é vegetariana, dê atenção especial a ferro, cálcio e vitamina B12 (principalmente se não " +
+        "consumir ovos e laticínios com regularidade) — combinar fontes vegetais de ferro com vitamina C ajuda na absorção.",
+    ];
+  }
+  return [];
+}
+
+/**
  * Relação cintura-quadril (RCQ) — indicador clássico de risco cardiovascular
  * quando as duas medidas estão disponíveis. Referências de corte (OMS):
  * mulher ≥0.85 e homem ≥0.90 já indicam risco aumentado.
@@ -333,7 +362,7 @@ export interface ResultadoAvaliacao {
   macros: Macros;
   aguaMl: number;
   /** Todos os avisos/recomendações da consulta: segurança calórica, condições
-   *  de saúde informadas e sono/estresse — nessa ordem de prioridade. */
+   *  de saúde informadas, sono/estresse e dieta restritiva — nessa ordem de prioridade. */
   avisos: string[];
 }
 
@@ -345,6 +374,7 @@ export function gerarResultadoAvaliacao(
     condicoesSaude?: CondicaoSaude[];
     qualidadeSono?: number | null;
     nivelEstresse?: number | null;
+    restricoesAlimentares?: string[];
   } & CondicaoEspecial
 ): ResultadoAvaliacao {
   const imc = calcularIMC(dados);
@@ -362,8 +392,11 @@ export function gerarResultadoAvaliacao(
   const macros = calcularMacros(metaCalorica, dados.pesoKg, dados.objetivo, limiteProteinaPorKg);
   const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade);
   const avisosSono = avaliarSonoEEstresse(dados.qualidadeSono ?? null, dados.nivelEstresse ?? null);
+  const avisosDieta = avaliarDietaRestritiva(dados.restricoesAlimentares ?? []);
 
-  const avisos = [avisoSeguranca, ...avisosCondicoes, ...avisosSono].filter((a): a is string => Boolean(a));
+  const avisos = [avisoSeguranca, ...avisosCondicoes, ...avisosSono, ...avisosDieta].filter(
+    (a): a is string => Boolean(a)
+  );
 
   return { imc, classificacaoImc, tmb, tdee, metaCalorica, macros, aguaMl, avisos };
 }

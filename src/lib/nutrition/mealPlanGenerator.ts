@@ -110,6 +110,13 @@ function construirOrientacoesCondicoesSaude(condicoes: CondicaoSaude[]): string[
         "salgadinhos); prefira preparações com pouco sal."
     );
   }
+  if (condicoes.includes("doenca_renal")) {
+    orientacoes.push(
+      "Doença renal: modere alimentos ricos em potássio (banana, laranja, batata, tomate em grande quantidade) e " +
+        "em fósforo (leite e derivados em excesso, refrigerantes escuros, embutidos); evite sal em excesso. Não " +
+        "existe substituto do sal light (rico em potássio) recomendado para esse paciente."
+    );
+  }
   return orientacoes;
 }
 

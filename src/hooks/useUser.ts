@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, comTimeout } from "@/lib/supabase/client";
 import type { Assinatura, Perfil } from "@/types/domain";
 
 interface EstadoUsuario {
@@ -26,33 +26,40 @@ export function useUser(): EstadoUsuario {
     let ativo = true;
 
     async function carregar() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user },
+        } = await comTimeout(supabase.auth.getUser());
 
-      if (!user) {
+        if (!user) {
+          if (ativo) setEstado({ user: null, perfil: null, assinatura: null, carregando: false });
+          return;
+        }
+
+        const [{ data: perfil }, { data: assinatura }] = await Promise.all([
+          supabase.from("perfis").select("*").eq("id", user.id).single(),
+          supabase
+            .from("assinaturas")
+            .select("*")
+            .eq("usuario_id", user.id)
+            .order("criado_em", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        if (ativo) {
+          setEstado({
+            user,
+            perfil: perfil as Perfil | null,
+            assinatura: assinatura as Assinatura | null,
+            carregando: false,
+          });
+        }
+      } catch {
+        // getUser() travou/expirou (ex: rede instável) — não deixa a Topbar/
+        // Sidebar presas num "carregando" eterno; trata como deslogado, o
+        // middleware cuida de redirecionar se a rota exigir autenticação.
         if (ativo) setEstado({ user: null, perfil: null, assinatura: null, carregando: false });
-        return;
-      }
-
-      const [{ data: perfil }, { data: assinatura }] = await Promise.all([
-        supabase.from("perfis").select("*").eq("id", user.id).single(),
-        supabase
-          .from("assinaturas")
-          .select("*")
-          .eq("usuario_id", user.id)
-          .order("criado_em", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-
-      if (ativo) {
-        setEstado({
-          user,
-          perfil: perfil as Perfil | null,
-          assinatura: assinatura as Assinatura | null,
-          carregando: false,
-        });
       }
     }
 

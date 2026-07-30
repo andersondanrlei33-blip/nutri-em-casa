@@ -11,7 +11,6 @@ import {
   INDICACOES_SAUDE_VOCABULARIO,
   type FiltroReceitas,
 } from "./receitaMatching";
-
 const DIAS: DiaSemana[] = [
   "segunda",
   "terca",
@@ -21,7 +20,6 @@ const DIAS: DiaSemana[] = [
   "sabado",
   "domingo",
 ];
-
 const RefeicaoGeradaSchema = z.object({
   dia_semana: z.enum(["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]),
   nome_refeicao: z.string(),
@@ -45,15 +43,12 @@ const RefeicaoGeradaSchema = z.object({
   receita_id: z.string().nullable().optional(),
   quantidade_porcoes: z.number().positive().optional(),
 });
-
 const PlanoGeradoSchema = z.object({
   refeicoes: z.array(RefeicaoGeradaSchema),
   observacoes_nutricionista: z.string(),
 });
-
 export type RefeicaoGerada = z.infer<typeof RefeicaoGeradaSchema>;
 export type PlanoGerado = z.infer<typeof PlanoGeradoSchema>;
-
 /**
  * Gera um plano alimentar semanal personalizado a partir da avaliação
  * nutricional. Usa a API da Anthropic quando ANTHROPIC_API_KEY estiver
@@ -80,7 +75,6 @@ export async function gerarPlanoAlimentar(
   }
   return gerarPlanoTemplate(avaliacao, receitasDisponiveis);
 }
-
 /**
  * Orientações de seleção de alimentos por condição de saúde — usadas no
  * prompt da IA. Antes dessa função, condições de saúde só geravam um aviso
@@ -135,7 +129,6 @@ function construirOrientacoesCondicoesSaude(condicoes: CondicaoSaude[]): string[
   }
   return orientacoes;
 }
-
 /**
  * Classifica o texto livre de "outra condição não listada" dentro do
  * vocabulário FECHADO de indicações de receita — a IA escolhe apenas entre
@@ -150,7 +143,6 @@ function construirOrientacoesCondicoesSaude(condicoes: CondicaoSaude[]): string[
 async function classificarCondicaoLivre(texto: string): Promise<IndicacaoSaudeReceita[]> {
   const anthropic = getAnthropicClient();
   if (!anthropic) return [];
-
   try {
     const resposta = await anthropic.messages.create({
       model: NUTRI_MODEL,
@@ -166,12 +158,10 @@ async function classificarCondicaoLivre(texto: string): Promise<IndicacaoSaudeRe
         },
       ],
     });
-
     const textoResposta = resposta.content
       .filter((bloco) => bloco.type === "text")
       .map((bloco) => (bloco as { text: string }).text)
       .join(" ");
-
     const candidatas = textoResposta.split(",").map((t) => normalizar(t));
     return INDICACOES_SAUDE_VOCABULARIO.filter((tag) => candidatas.some((c) => c.includes(tag)));
   } catch (erro) {
@@ -179,7 +169,6 @@ async function classificarCondicaoLivre(texto: string): Promise<IndicacaoSaudeRe
     return [];
   }
 }
-
 interface CandidataResumo {
   id: string;
   nome: string;
@@ -188,14 +177,12 @@ interface CandidataResumo {
   carboidrato_g: number;
   gordura_g: number;
 }
-
 async function gerarPlanoComIA(
   avaliacao: AvaliacaoNutricional,
   receitasDisponiveis: Receita[]
 ): Promise<PlanoGerado> {
   const anthropic = getAnthropicClient()!;
   const filtro = construirFiltro(avaliacao);
-
   // "Outra condição" em texto livre: só tentamos extrair uma indicação de
   // receita dela quando NÃO for um caso de condição clínica complexa (essas
   // já forçam o modo seguro lá em calculations.ts, e não faz sentido
@@ -207,10 +194,8 @@ async function gerarPlanoComIA(
     const tagsExtras = await classificarCondicaoLivre(avaliacao.condicoes_saude_outras);
     tagsExtras.forEach((tag) => filtro.indicacoesPreferidas.add(tag));
   }
-
   const templates = escolherTemplates(avaliacao.refeicoes_por_dia);
   const categorias = [...new Set(templates.map((t) => t.categoria))];
-
   // Candidatas já filtradas por alergia/restrição — a IA só pode escolher
   // dentro dessas listas, nunca inventar um receita_id fora delas.
   const candidatasPorCategoria = new Map<CategoriaReceita, Receita[]>();
@@ -220,7 +205,6 @@ async function gerarPlanoComIA(
     candidatasPorCategoria.set(categoria, candidatas);
     idsValidosPorCategoria.set(categoria, new Set(candidatas.map((r) => r.id)));
   }
-
   const resumoCandidatas: Record<string, CandidataResumo[]> = {};
   for (const [categoria, receitas] of candidatasPorCategoria) {
     resumoCandidatas[categoria] = receitas.map((r) => ({
@@ -232,13 +216,10 @@ async function gerarPlanoComIA(
       gordura_g: r.gordura_g,
     }));
   }
-
   const orientacoesCondicoes = construirOrientacoesCondicoesSaude(avaliacao.condicoes_saude ?? []);
-
   const prompt = `Você é uma nutricionista virtual especialista do app "Nutri em Casa".
 Crie um plano alimentar semanal (segunda a domingo) para o paciente abaixo, respeitando
 EXATAMENTE as metas calóricas e de macronutrientes calculadas.
-
 Dados do paciente:
 - Objetivo: ${avaliacao.objetivo}
 - Refeições por dia: ${avaliacao.refeicoes_por_dia}
@@ -267,12 +248,10 @@ Metas diárias (NÃO ultrapassar em mais de 5%):
 - Proteína: ${avaliacao.meta_proteina_g} g
 - Carboidrato: ${avaliacao.meta_carboidrato_g} g
 - Gordura: ${avaliacao.meta_gordura_g} g
-
 REGRA DE SEGURANÇA OBRIGATÓRIA sobre alergias/restrições: para cada categoria de refeição,
 aqui estão as ÚNICAS receitas da nossa biblioteca já filtradas como seguras para este paciente
 (alergias e restrições já foram excluídas — NÃO escolha nada fora desta lista):
 ${JSON.stringify(resumoCandidatas, null, 2)}
-
 Para cada refeição, se houver uma receita adequada na lista da categoria correspondente,
 defina "receita_id" com o id exato dela e ajuste "quantidade_porcoes" (pode ser fracionário,
 ex: 1.5) para que as calorias da receita escalada cheguem perto do alvo da refeição. Mesmo
@@ -282,7 +261,6 @@ Se NENHUMA receita da lista servir para aquele horário/categoria, defina "recei
 e escreva uma "descricao" simples que NÃO cite nenhum alimento presente nas alergias do paciente.
 IMPORTANTE: o campo "dia_semana" deve ser exatamente um destes valores, SEM acento: "segunda",
 "terca", "quarta", "quinta", "sexta", "sabado", "domingo".
-
 Responda APENAS com um JSON válido no formato:
 {
   "refeicoes": [
@@ -294,23 +272,18 @@ Responda APENAS com um JSON válido no formato:
   "observacoes_nutricionista": "..."
 }
 Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
-
   const resposta = await anthropic.messages.create({
     model: NUTRI_MODEL,
     max_tokens: 8000,
     messages: [{ role: "user", content: prompt }],
   });
-
   const textoResposta = resposta.content
     .filter((bloco) => bloco.type === "text")
     .map((bloco) => (bloco as { text: string }).text)
     .join("\n");
-
   const jsonMatch = textoResposta.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("Resposta da IA não continha JSON válido.");
-
   const bruto = JSON.parse(jsonMatch[0]);
-
   // O modelo (Haiku) às vezes devolve "dia_semana" acentuado (ex: "terça",
   // "sábado") mesmo pedindo sem acento no prompt, e às vezes deixa
   // "descricao" como null quando já vinculou um receita_id, achando que não
@@ -328,7 +301,6 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
           : undefined;
       const descricaoValida =
         typeof refeicao.descricao === "string" && refeicao.descricao.trim() !== "";
-
       return {
         ...refeicao,
         dia_semana: DIAS.includes(diaNormalizado as DiaSemana) ? diaNormalizado : diaBruto,
@@ -339,9 +311,31 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
       };
     });
   }
-
   const plano = PlanoGeradoSchema.parse(bruto);
-
+  // A IA costuma ser inconsistente com "quantidade_porcoes": muitas vezes
+  // devolve 1 (ou simplesmente copia os valores crus da receita, sem
+  // escalar de verdade) mesmo quando a receita sozinha fica bem longe da
+  // meta calórica daquele horário — foi o que causou um plano de ganho de
+  // massa somando só ~38% da meta diária. Em vez de confiar no número que a
+  // IA escreveu, recalculamos a meta calórica de cada refeição a partir dos
+  // mesmos percentuais por horário do fallback determinístico (casando cada
+  // refeição do dia com o template na mesma posição, ordenado por horário)
+  // e escalamos a receita real vinculada pra chegar perto disso — mesmo
+  // limite de 0.5x a 2x usado lá, por consistência.
+  const refeicoesPorDiaAgrupadas = new Map<string, RefeicaoGerada[]>();
+  plano.refeicoes.forEach((r) => {
+    const lista = refeicoesPorDiaAgrupadas.get(r.dia_semana) ?? [];
+    lista.push(r);
+    refeicoesPorDiaAgrupadas.set(r.dia_semana, lista);
+  });
+  const caloriasAlvoPorRefeicao = new Map<RefeicaoGerada, number>();
+  for (const lista of refeicoesPorDiaAgrupadas.values()) {
+    const ordenada = [...lista].sort((a, b) => a.horario.localeCompare(b.horario));
+    ordenada.forEach((refeicao, i) => {
+      const template = templates[i] ?? templates[templates.length - 1];
+      caloriasAlvoPorRefeicao.set(refeicao, Math.round(avaliacao.meta_calorica * template.percentual));
+    });
+  }
   // Segunda camada de segurança: nunca confiar cegamente no que a IA
   // devolveu. Qualquer receita_id fora da lista permitida pra aquela
   // categoria é descartado, e qualquer descrição livre que mencione uma
@@ -349,19 +343,24 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
   const refeicoesValidadas: RefeicaoGerada[] = plano.refeicoes.map((refeicao) => {
     const idsValidos = idsValidosPorCategoria.get(refeicao.categoria) ?? new Set<string>();
     const receitaIdValido = refeicao.receita_id && idsValidos.has(refeicao.receita_id) ? refeicao.receita_id : null;
-
     if (!receitaIdValido && textoContemAlergiaDoUsuario(refeicao.descricao, avaliacao.alergias)) {
       throw new Error(
         `IA sugeriu refeição de texto livre mencionando possível alergia do paciente ("${refeicao.descricao}") — descartando plano por segurança.`
       );
     }
-
-    return { ...refeicao, receita_id: receitaIdValido };
+    let quantidadePorcoes = refeicao.quantidade_porcoes ?? 1;
+    if (receitaIdValido) {
+      const receitaResumo = todasCandidatas.find((r) => r.id === receitaIdValido);
+      const caloriasAlvo = caloriasAlvoPorRefeicao.get(refeicao);
+      if (receitaResumo && receitaResumo.calorias > 0 && caloriasAlvo && caloriasAlvo > 0) {
+        const escalaBruta = caloriasAlvo / receitaResumo.calorias;
+        quantidadePorcoes = Math.round(Math.min(2, Math.max(0.5, escalaBruta)) * 100) / 100;
+      }
+    }
+    return { ...refeicao, receita_id: receitaIdValido, quantidade_porcoes: quantidadePorcoes };
   });
-
   return { refeicoes: refeicoesValidadas, observacoes_nutricionista: plano.observacoes_nutricionista };
 }
-
 /**
  * Fallback determinístico: para cada horário do dia, escolhe a receita real
  * da biblioteca mais próxima da meta calórica daquele horário, já filtrada
@@ -375,14 +374,12 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
   const refeicoes: RefeicaoGerada[] = [];
   const usadasPorCategoria = new Map<CategoriaReceita, Set<string>>();
   let algumaCategoriaSemOpcao = false;
-
   for (const dia of DIAS) {
     templates.forEach((template) => {
       const caloriasAlvo = Math.round(avaliacao.meta_calorica * template.percentual);
       const candidatas = filtrarReceitasCompativeis(receitasDisponiveis, template.categoria, filtro);
       const usadas = usadasPorCategoria.get(template.categoria) ?? new Set<string>();
       const escolhida = escolherReceita(candidatas, caloriasAlvo, usadas);
-
       if (escolhida) {
         usadas.add(escolhida.id);
         usadasPorCategoria.set(template.categoria, usadas);
@@ -390,7 +387,6 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
         // sensatos (0.5x a 2x) pra não gerar porções absurdas.
         const escalaBruta = escolhida.calorias > 0 ? caloriasAlvo / escolhida.calorias : 1;
         const escala = Math.min(2, Math.max(0.5, escalaBruta));
-
         refeicoes.push({
           dia_semana: dia,
           nome_refeicao: escolhida.nome,
@@ -422,7 +418,6 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
       }
     });
   }
-
   const observacoes =
     "Plano gerado automaticamente com base nas suas metas calóricas e de macronutrientes, priorizando receitas " +
     "da nossa biblioteca compatíveis com as restrições e alergias que você informou." +
@@ -431,10 +426,8 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
         "manualmente pela lista de Receitas quando adicionarmos mais opções para o seu perfil."
       : " Troque qualquer refeição pela biblioteca de receitas a qualquer momento — os valores nutricionais do dia " +
         "são recalculados automaticamente.");
-
   return { refeicoes, observacoes_nutricionista: observacoes };
 }
-
 interface TemplateRefeicao {
   nome: string;
   horario: string;
@@ -442,7 +435,6 @@ interface TemplateRefeicao {
   percentual: number;
   descricao: string;
 }
-
 function escolherTemplates(refeicoesPorDia: number): TemplateRefeicao[] {
   const conjuntos: Record<number, TemplateRefeicao[]> = {
     3: [
@@ -472,6 +464,5 @@ function escolherTemplates(refeicoesPorDia: number): TemplateRefeicao[] {
       { nome: "Ceia", horario: "21:30", categoria: "lanche", percentual: 0.1, descricao: "Ceia leve antes de dormir." },
     ],
   };
-
   return conjuntos[refeicoesPorDia] ?? conjuntos[3];
 }

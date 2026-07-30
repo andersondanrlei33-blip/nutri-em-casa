@@ -7,7 +7,6 @@
  * `dietas_atendidas`) gravadas em cada receita — determinístico e testável.
  */
 import type { AvaliacaoNutricional, CategoriaReceita, CondicaoSaude, IndicacaoSaudeReceita, Receita } from "@/types/domain";
-
 /** Vocabulário fechado de alérgenos reconhecidos. */
 const MAPA_ALERGENOS: Record<string, string> = {
   amendoim: "amendoim",
@@ -31,7 +30,6 @@ const MAPA_ALERGENOS: Record<string, string> = {
   "frutos do mar": "frutos_do_mar",
   soja: "soja",
 };
-
 /** Vocabulário fechado de dietas/restrições reconhecidas. */
 const MAPA_DIETAS: Record<string, string> = {
   vegetariano: "vegetariano",
@@ -46,7 +44,6 @@ const MAPA_DIETAS: Record<string, string> = {
   "intolerante a lactose": "sem_lactose",
   "intolerante à lactose": "sem_lactose",
 };
-
 export function normalizar(texto: string): string {
   return texto
     .toLowerCase()
@@ -54,7 +51,6 @@ export function normalizar(texto: string): string {
     .replace(new RegExp("[̀-ͯ]", "g"), "")
     .trim();
 }
-
 function extrairTags(itens: string[], mapa: Record<string, string>): Set<string> {
   const normalizados = itens.map(normalizar);
   const tags = new Set<string>();
@@ -64,7 +60,6 @@ function extrairTags(itens: string[], mapa: Record<string, string>): Set<string>
   }
   return tags;
 }
-
 /** Vocabulário fechado completo de indicações de receita — usado tanto pra
  *  validar o que a IA pode escolher pra "outra condição" quanto pra montar
  *  o filtro a partir das condições de saúde estruturadas abaixo. */
@@ -75,7 +70,6 @@ export const INDICACOES_SAUDE_VOCABULARIO: IndicacaoSaudeReceita[] = [
   "controle_renal",
   "alta_fibra",
 ];
-
 /** Mapeia cada condição de saúde estruturada pra indicação(ões) de receita
  *  correspondente(s) — sinal de PRIORIDADE (nunca bloqueio duro, diferente
  *  de alergia): se não houver receita com a tag, ainda mostramos as outras
@@ -89,7 +83,6 @@ const MAPA_CONDICAO_INDICACAO: Record<CondicaoSaude, IndicacaoSaudeReceita[]> = 
   hipertireoidismo: [],
   colesterol_alto: ["baixo_colesterol"],
 };
-
 export interface FiltroReceitas {
   /** Alérgenos que NENHUMA receita sugerida pode conter (bloqueio duro). */
   alergiasBloqueadas: Set<string>;
@@ -102,7 +95,6 @@ export interface FiltroReceitas {
    *  de "outra condição" em texto livre (ver mealPlanGenerator.ts). */
   indicacoesPreferidas: Set<IndicacaoSaudeReceita>;
 }
-
 export function construirFiltro(avaliacao: AvaliacaoNutricional): FiltroReceitas {
   const indicacoesPreferidas = new Set<IndicacaoSaudeReceita>();
   for (const condicao of avaliacao.condicoes_saude ?? []) {
@@ -110,7 +102,6 @@ export function construirFiltro(avaliacao: AvaliacaoNutricional): FiltroReceitas
       indicacoesPreferidas.add(tag);
     }
   }
-
   return {
     alergiasBloqueadas: extrairTags(avaliacao.alergias, MAPA_ALERGENOS),
     dietasExigidas: extrairTags(avaliacao.restricoes_alimentares, MAPA_DIETAS),
@@ -118,7 +109,6 @@ export function construirFiltro(avaliacao: AvaliacaoNutricional): FiltroReceitas
     indicacoesPreferidas,
   };
 }
-
 /** Uma receita é segura se não contém nenhum alérgeno bloqueado e atende a todas as dietas exigidas. */
 export function receitaEhSegura(receita: Receita, filtro: FiltroReceitas): boolean {
   const alergenos = new Set(receita.alergenos ?? []);
@@ -131,14 +121,12 @@ export function receitaEhSegura(receita: Receita, filtro: FiltroReceitas): boole
   }
   return true;
 }
-
 function receitaContemAlimentoEvitado(receita: Receita, filtro: FiltroReceitas): boolean {
   if (filtro.alimentosEvitados.length === 0) return false;
   return receita.ingredientes.some((ing) =>
     filtro.alimentosEvitados.some((evitado) => normalizar(ing.nome).includes(evitado))
   );
 }
-
 /** Também usado para checar o texto livre gerado por IA contra alergias reais do usuário
  *  (segunda camada de segurança, além do filtro estrutural por tags). */
 export function textoContemAlergiaDoUsuario(texto: string, alergias: string[]): boolean {
@@ -148,7 +136,6 @@ export function textoContemAlergiaDoUsuario(texto: string, alergias: string[]): 
     return termo.length > 2 && textoNorm.includes(termo);
   });
 }
-
 /** Receitas da categoria pedida que respeitam alergias/restrições, priorizando
  *  as que também evitam o que o usuário disse não gostar. */
 export function filtrarReceitasCompativeis(
@@ -159,33 +146,59 @@ export function filtrarReceitasCompativeis(
   const daCategoria = receitas.filter((r) => r.categoria === categoria);
   const seguras = daCategoria.filter((r) => receitaEhSegura(r, filtro));
   const preferidas = seguras.filter((r) => !receitaContemAlimentoEvitado(r, filtro));
-  const pool = preferidas.length > 0 ? preferidas : seguras;
-
-  // Última camada, só desempate: entre as receitas já seguras/preferidas,
-  // dá prioridade às que batem com alguma indicação de saúde do paciente
-  // (ex: baixo_sodio pra hipertensão). Nunca reduz o pool a zero — se
-  // nenhuma bater, segue com o pool normal.
+  let pool = preferidas.length > 0 ? preferidas : seguras;
+  // Desempate 1: entre as receitas já seguras/preferidas, dá prioridade às
+  // que batem com alguma indicação de saúde do paciente (ex: baixo_sodio pra
+  // hipertensão). Nunca reduz o pool a zero — se nenhuma bater, segue com o
+  // pool normal.
   if (filtro.indicacoesPreferidas.size > 0) {
     const comIndicacao = pool.filter((r) =>
       (r.indicacoes_saude ?? []).some((tag) => filtro.indicacoesPreferidas.has(tag))
     );
-    if (comIndicacao.length > 0) return comIndicacao;
+    if (comIndicacao.length > 0) pool = comIndicacao;
   }
-
+  // Desempate 2: custo. Sempre ativo, pra todo mundo (não depende de nenhuma
+  // resposta do paciente) — o público-alvo do app é majoritariamente sensível
+  // a preço, então uma receita "alto" custo (ex: salmão) só deveria aparecer
+  // se não sobrar nenhuma opção baixo/médio dentro do que já é seguro/preferido/
+  // indicado. Mesma regra de nunca zerar o pool.
+  const acessiveis = pool.filter((r) => r.custo !== "alto");
+  if (acessiveis.length > 0) return acessiveis;
   return pool;
 }
-
-/** Escolhe a receita com calorias mais próximas do alvo, evitando repetir
- *  uma já usada recentemente na semana quando há alternativa. */
+/** Metas de calorias e macronutrientes de UMA refeição específica (já
+ *  proporcionais ao que ainda falta bater da meta diária — ver
+ *  alocarReceitasDoDia em mealPlanGenerator.ts). */
+export interface MetasRefeicao {
+  calorias: number;
+  proteinaG: number;
+  carboidratoG: number;
+  gorduraG: number;
+}
+/**
+ * Escolhe a receita mais equilibrada em relação às metas de calorias E
+ * macronutrientes da refeição — antes só olhava pra calorias, o que podia
+ * escolher uma receita rica em proteína/gordura mas pobre em carboidrato
+ * mesmo batendo a meta calórica. Cada desvio é normalizado pelo próprio
+ * alvo (% de erro), pra que um erro de 10g numa meta pequena pese o mesmo
+ * que 10g numa meta grande. Evita repetir uma receita já usada recentemente
+ * na semana quando há alternativa.
+ */
 export function escolherReceita(
   candidatas: Receita[],
-  caloriasAlvo: number,
+  metas: MetasRefeicao,
   usadasRecentemente: Set<string>
 ): Receita | null {
   if (candidatas.length === 0) return null;
   const naoRepetidas = candidatas.filter((r) => !usadasRecentemente.has(r.id));
   const pool = naoRepetidas.length > 0 ? naoRepetidas : candidatas;
-  return pool.reduce((melhor, atual) =>
-    Math.abs(atual.calorias - caloriasAlvo) < Math.abs(melhor.calorias - caloriasAlvo) ? atual : melhor
-  );
+
+  const desvio = (valor: number, alvo: number) => (alvo > 0 ? Math.abs(valor - alvo) / alvo : 0);
+  const distancia = (r: Receita) =>
+    desvio(r.calorias, metas.calorias) +
+    desvio(r.proteina_g, metas.proteinaG) +
+    desvio(r.carboidrato_g, metas.carboidratoG) +
+    desvio(r.gordura_g, metas.gorduraG);
+
+  return pool.reduce((melhor, atual) => (distancia(atual) < distancia(melhor) ? atual : melhor));
 }

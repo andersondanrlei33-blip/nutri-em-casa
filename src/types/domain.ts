@@ -116,6 +116,39 @@ export interface AvaliacaoNutricional {
   meta_fibra_g: number;
   meta_agua_ml: number;
   criado_em: string;
+
+  // Campos da Consulta Nutricional de 40 perguntas (anamnese completa) —
+  // todos opcionais/nulos em avaliações antigas, que só tinham os campos acima.
+  profissao: string | null;
+  tipo_suporte_esperado: string | null;
+  horas_sono: string | null;
+  insonia: boolean | null;
+  medicacao_sono: string | null;
+  disposicao_manha: string | null;
+  disposicao_tarde: string | null;
+  disposicao_noite: string | null;
+  concentracao: string | null;
+  memoria_recente: string | null;
+  memoria_antiga: string | null;
+  rotina_trabalho: string | null;
+  /** Histórico FAMILIAR de doenças — diferente de condicoes_saude, que é da própria pessoa. */
+  doencas_familiares: string[];
+  /** Também escaneado por identificarCondicaoClinicaComplexa junto com condicoes_saude_outras. */
+  historico_cirurgias: string | null;
+  suplementos_em_uso: string | null;
+  dieta_anterior: string | null;
+  ingestao_agua_copos: string | null;
+  quem_prepara_comida: string | null;
+  refeicao_sozinho_ou_acompanhado: string | null;
+  horario_mais_fome: string[];
+  mastigacao: string | null;
+  preferencia_sabor: string[];
+  frequencia_restaurante: string | null;
+  historico_dietetico: string | null;
+  /** Gera aviso automático — ver avaliarMudancaPesoNaoIntencional. */
+  perda_peso_nao_intencional: string | null;
+  ganho_peso_nao_intencional: string | null;
+  como_conheceu: string | null;
 }
 
 export interface Receita {
@@ -280,19 +313,6 @@ export interface RegistroExercicio {
   criado_em: string;
 }
 
-export interface Meta {
-  id: string;
-  usuario_id: string;
-  tipo: "peso" | "medida" | "agua" | "habito" | "personalizada";
-  titulo: string;
-  valor_alvo: number | null;
-  valor_atual: number | null;
-  unidade: string | null;
-  prazo: string | null;
-  concluida: boolean;
-  criado_em: string;
-}
-
 export interface Assinatura {
   id: string;
   usuario_id: string;
@@ -305,12 +325,4 @@ export interface Assinatura {
   trial_termina_em: string | null;
   cancelada_em: string | null;
   criado_em: string;
-}
-
-export interface ItemListaCompras {
-  nome: string;
-  quantidade: number;
-  unidade: string;
-  categoria: string;
-  marcado: boolean;
 }

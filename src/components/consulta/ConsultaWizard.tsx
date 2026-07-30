@@ -1,5 +1,4 @@
 "use client";
-
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp, ShieldAlert } from "lucide-react";
@@ -17,7 +16,6 @@ import type {
   ObjetivoNutricional,
   StatusTabagismo,
 } from "@/types/domain";
-
 /**
  * Consulta Nutricional — anamnese completa (baseada no questionário real de
  * uma nutricionista de referência, 40 perguntas) + 6 perguntas que o app
@@ -27,7 +25,6 @@ import type {
  * histórico familiar), peso desejado e um campo final de observações livres.
  * Uma pergunta por vez, igual ao protótipo validado.
  */
-
 function gerarFaixa(min: number, max: number, passo: number, sufixo: string): string[] {
   const lista: string[] = [];
   for (let v = min; v <= max; v += passo) lista.push(`${v}${sufixo}`);
@@ -35,7 +32,6 @@ function gerarFaixa(min: number, max: number, passo: number, sufixo: string): st
 }
 const ALTURAS = gerarFaixa(140, 210, 1, " cm");
 const PESOS = gerarFaixa(30, 200, 1, " kg");
-
 const CONDICOES_SAUDE_OPCOES = [
   "Diabetes tipo 1",
   "Diabetes tipo 2",
@@ -55,24 +51,24 @@ const CONDICOES_SAUDE_SLUGS: Record<string, CondicaoSaude> = {
   "Hipertireoidismo": "hipertireoidismo",
   "Colesterol alto": "colesterol_alto",
 };
-
 const DOENCAS_FAMILIARES_OPCOES = [
   "Câncer", "Diabetes", "Doença cardiovascular", "Doenças autoimunes", "Doenças osteoarticulares",
   "Doenças hormonais", "Endometriose", "Hipertensão", "Hipotireoidismo", "Hipertireoidismo",
   "Obesidade", "Doença renal", "Depressão", "SOP", "Síndrome do pânico", "Transtornos alimentares",
   "Outros", "Nenhuma dessas",
 ];
-
 const SITUACOES_ESPECIAIS_OPCOES = [
   "Estou grávida",
   "Estou amamentando",
   "Tenho ou já tive transtorno alimentar",
   "Nenhuma dessas situações",
 ];
-
+/** Opções de "situações especiais" que só fazem sentido pra quem pode
+ *  engravidar/amamentar — não exibidas quando o paciente marcou gênero
+ *  masculino na pergunta anterior. */
+const OPCOES_SO_GESTACAO = ["Estou grávida", "Estou amamentando"];
 /** Tipos de campo suportados pelo motor de perguntas. */
 type TipoPergunta = "text" | "numero" | "single" | "single_detail" | "multi" | "dropdown";
-
 interface Pergunta {
   id: number;
   campo: keyof RespostasConsulta;
@@ -89,7 +85,6 @@ interface Pergunta {
   /** Placeholder pra perguntas de texto livre. */
   placeholder?: string;
 }
-
 interface RespostasConsulta {
   idade: string;
   genero: Genero | "";
@@ -137,7 +132,6 @@ interface RespostasConsulta {
   como_conheceu: string;
   observacoes: string;
 }
-
 const INICIAL: RespostasConsulta = {
   idade: "", genero: "", objetivo: "", tipo_suporte_esperado: "",
   tabagismo: "", consumo_alcool: "", nivel_atividade: "", horas_sono: "", qualidade_sono_categoria: "",
@@ -151,7 +145,6 @@ const INICIAL: RespostasConsulta = {
   peso_kg: "", situacoes_especiais: [], peso_meta_kg: "", perda_peso_nao_intencional: "",
   ganho_peso_nao_intencional: "", como_conheceu: "", observacoes: "",
 };
-
 const PERGUNTAS: Pergunta[] = [
   { id: 3, campo: "idade", texto: "Idade", tipo: "numero", obrigatoria: true },
   { id: 4, campo: "genero", texto: "Gênero", tipo: "single", obrigatoria: true, opcoes: ["Feminino", "Masculino", "Outro"], mapa: { Feminino: "feminino", Masculino: "masculino", Outro: "outro" } },
@@ -212,14 +205,12 @@ const PERGUNTAS: Pergunta[] = [
     opcoes: ["Indicação de familiar/amigo", "Instagram", "Facebook", "Site", "Google", "Indicação de profissional da saúde"] },
   { id: 46, campo: "observacoes", texto: "Algo mais que sua nutricionista virtual deveria saber?", tipo: "text", obrigatoria: false, placeholder: "Ex: trabalho por turnos, viajo bastante a trabalho, cozinho pouco durante a semana..." },
 ];
-
 function paraLista(texto: string): string[] {
   return texto.split(",").map((s) => s.trim()).filter(Boolean);
 }
 function numeroDaFaixa(valor: string): number {
   return Number(valor.replace(/[^\d.]/g, ""));
 }
-
 /** Numa consulta de retorno, pré-preenche os campos que existem tanto na
  *  avaliação anterior quanto no novo formulário — os campos novos (que o
  *  questionário de 40 perguntas trouxe) começam em branco mesmo assim. */
@@ -246,7 +237,6 @@ function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsul
     situacoes_especiais: [],
   };
 }
-
 export function ConsultaWizard({
   avaliacaoAnterior,
 }: {
@@ -264,19 +254,26 @@ export function ConsultaWizard({
     resumo: string;
     avisoMetaPeso: string | null;
   }>(null);
-
   const pergunta = indice >= 0 && indice < PERGUNTAS.length ? PERGUNTAS[indice] : null;
-
   function set<K extends keyof RespostasConsulta>(campo: K, valor: RespostasConsulta[K]) {
     setRespostas((prev) => ({ ...prev, [campo]: valor }));
   }
-
+  // Opções da pergunta atual, já filtradas pro contexto do paciente — hoje
+  // só usada pra tirar "Estou grávida"/"Estou amamentando" de quem marcou
+  // gênero masculino, mas serve de ponto único caso surjam outros casos
+  // parecidos no futuro.
+  const opcoesPergunta = useMemo(() => {
+    if (!pergunta?.opcoes) return pergunta?.opcoes;
+    if (pergunta.campo === "situacoes_especiais" && respostas.genero === "masculino") {
+      return pergunta.opcoes.filter((o) => !OPCOES_SO_GESTACAO.includes(o));
+    }
+    return pergunta.opcoes;
+  }, [pergunta, respostas.genero]);
   const podeVerPreview =
     Number(respostas.peso_kg && numeroDaFaixa(respostas.peso_kg)) > 0 &&
     Number(respostas.altura_cm && numeroDaFaixa(respostas.altura_cm)) > 0 &&
     Number(respostas.idade) > 0 &&
     !!respostas.genero;
-
   const preview = useMemo(() => {
     if (!podeVerPreview) return null;
     try {
@@ -298,13 +295,11 @@ export function ConsultaWizard({
       return null;
     }
   }, [respostas, podeVerPreview]);
-
   const diffPeso = useMemo(() => {
     if (!avaliacaoAnterior || !respostas.peso_kg) return null;
     const diferenca = numeroDaFaixa(respostas.peso_kg) - avaliacaoAnterior.peso_kg;
     return Math.round(diferenca * 10) / 10;
   }, [avaliacaoAnterior, respostas.peso_kg]);
-
   function respondida(p: Pergunta): boolean {
     const valor = respostas[p.campo];
     if (p.tipo === "single_detail") {
@@ -320,7 +315,6 @@ export function ConsultaWizard({
     if (p.tipo === "numero") return valor !== "" && valor !== null && Number(valor) > 0;
     return typeof valor === "string" && valor.trim().length > 0;
   }
-
   function validarPerguntaAtual(): string | null {
     if (!pergunta) return null;
     if (pergunta.campo === "idade" && respostas.idade && Number(respostas.idade) < 18) {
@@ -331,7 +325,6 @@ export function ConsultaWizard({
     }
     return null;
   }
-
   function avancar() {
     const erro = validarPerguntaAtual();
     if (erro) {
@@ -347,18 +340,26 @@ export function ConsultaWizard({
   function voltar() {
     setIndice((i) => Math.max(-1, i - 1));
   }
-
   function escolherSingle(p: Pergunta, label: string) {
     setEscolhas((prev) => ({ ...prev, [p.id]: label }));
     const valorReal = p.mapa ? p.mapa[label] : label;
+    // Gênero masculino não deveria carregar respostas de gravidez/amamentação
+    // de uma tentativa anterior — limpa junto, sem esperar o paciente voltar
+    // na pergunta de situações especiais pra corrigir manualmente.
+    if (p.campo === "genero" && valorReal === "masculino") {
+      setRespostas((prev) => ({
+        ...prev,
+        genero: valorReal as Genero,
+        situacoes_especiais: prev.situacoes_especiais.filter((s) => !OPCOES_SO_GESTACAO.includes(s)),
+      }));
+      return;
+    }
     set(p.campo, valorReal as never);
   }
-
   function escolherSingleDetail(p: Pergunta, label: string) {
     setEscolhas((prev) => ({ ...prev, [p.id]: label }));
     if (label !== p.detalheObrigatorioSe) set(p.campo, "" as never);
   }
-
   function escolherMulti(p: Pergunta, label: string, marcado: boolean) {
     const opcaoNenhuma = p.opcoes?.find((o) => o.toLowerCase().startsWith("nenhuma"));
     setRespostas((prev) => {
@@ -376,7 +377,6 @@ export function ConsultaWizard({
       return { ...prev, [p.campo]: novo };
     });
   }
-
   /** Monta o payload pra API a partir do estado de respostas — traduz rótulos
    *  em valores reais, mescla campos correlatos (ex: alimento favorito entra
    *  na mesma lista de preferências usada pelo gerador de plano) e converte
@@ -386,7 +386,6 @@ export function ConsultaWizard({
     const alimentosEvitados = [respostas.alimento_rejeitado].filter((s) => s.trim());
     const medicamentos = paraLista(respostas.medicamentos_em_uso);
     if (respostas.medicacao_sono.trim()) medicamentos.push(respostas.medicacao_sono.trim());
-
     return {
       peso_kg: numeroDaFaixa(respostas.peso_kg),
       altura_cm: numeroDaFaixa(respostas.altura_cm),
@@ -414,7 +413,6 @@ export function ConsultaWizard({
       gestante: respostas.situacoes_especiais.includes("Estou grávida"),
       lactante: respostas.situacoes_especiais.includes("Estou amamentando"),
       historico_transtorno_alimentar: respostas.situacoes_especiais.includes("Tenho ou já tive transtorno alimentar"),
-
       profissao: null,
       tipo_suporte_esperado: respostas.tipo_suporte_esperado || null,
       horas_sono: respostas.horas_sono || null,
@@ -444,7 +442,6 @@ export function ConsultaWizard({
       como_conheceu: respostas.como_conheceu || null,
     };
   }
-
   async function finalizarConsulta() {
     setEnviando(true);
     try {
@@ -453,10 +450,8 @@ export function ConsultaWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(montarPayload()),
       });
-
       const dados = await resposta.json();
       if (!resposta.ok) throw new Error(dados.erro ?? "Erro ao gerar o plano.");
-
       setResultadoFinal({
         observacoes: dados.observacoesNutricionista,
         avisos: dados.avisos ?? [],
@@ -470,7 +465,6 @@ export function ConsultaWizard({
       setEnviando(false);
     }
   }
-
   if (resultadoFinal) {
     return (
       <Card className="mx-auto max-w-xl animate-fade-in-up">
@@ -527,7 +521,6 @@ export function ConsultaWizard({
       </Card>
     );
   }
-
   // ---- Tela de intro ----
   if (indice === -1) {
     return (
@@ -552,12 +545,10 @@ export function ConsultaWizard({
       </div>
     );
   }
-
   if (!pergunta) return null;
   const progresso = Math.round(((indice + 1) / PERGUNTAS.length) * 100);
   const opcaoAtual = escolhas[pergunta.id];
   const mostrarDetalhe = pergunta.tipo === "single_detail" && opcaoAtual === pergunta.detalheObrigatorioSe;
-
   return (
     <div className="mx-auto max-w-xl">
       <div className="mb-5 h-1.5 rounded-full bg-black/10">
@@ -566,7 +557,6 @@ export function ConsultaWizard({
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-600">
         Pergunta {indice + 1} de {PERGUNTAS.length}
       </p>
-
       <Card>
         <CardContent className="py-8 animate-fade-in-up">
           <h2 className="text-base font-semibold leading-snug text-foreground">
@@ -574,7 +564,6 @@ export function ConsultaWizard({
             {!pergunta.obrigatoria && <span className="ml-1 text-xs font-normal text-muted">(opcional)</span>}
           </h2>
           {pergunta.hint && <p className="mt-1 text-xs text-muted">{pergunta.hint}</p>}
-
           <div className="mt-5">
             {pergunta.tipo === "text" && (
               <Textarea
@@ -583,7 +572,6 @@ export function ConsultaWizard({
                 onChange={(e) => set(pergunta.campo, e.target.value as never)}
               />
             )}
-
             {pergunta.tipo === "numero" && (
               <Input
                 type="number"
@@ -593,22 +581,20 @@ export function ConsultaWizard({
                 onChange={(e) => set(pergunta.campo, e.target.value as never)}
               />
             )}
-
             {pergunta.tipo === "dropdown" && (
               <Select
                 value={opcaoAtual ?? ""}
                 onChange={(e) => escolherSingle(pergunta, e.target.value)}
               >
                 <option value="" disabled>Selecione...</option>
-                {pergunta.opcoes?.map((o) => (
+                {opcoesPergunta?.map((o) => (
                   <option key={o} value={o}>{o}</option>
                 ))}
               </Select>
             )}
-
             {pergunta.tipo === "single" && (
               <div className="flex flex-col gap-2">
-                {pergunta.opcoes?.map((o) => (
+                {opcoesPergunta?.map((o) => (
                   <button
                     key={o}
                     type="button"
@@ -624,11 +610,10 @@ export function ConsultaWizard({
                 ))}
               </div>
             )}
-
             {pergunta.tipo === "single_detail" && (
               <>
                 <div className="flex flex-col gap-2">
-                  {pergunta.opcoes?.map((o) => (
+                  {opcoesPergunta?.map((o) => (
                     <button
                       key={o}
                       type="button"
@@ -654,10 +639,9 @@ export function ConsultaWizard({
                 )}
               </>
             )}
-
             {pergunta.tipo === "multi" && (
               <div className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-white p-3 sm:grid-cols-2 max-h-72 overflow-y-auto">
-                {pergunta.opcoes?.map((o) => (
+                {opcoesPergunta?.map((o) => (
                   <label key={o} htmlFor={`q${pergunta.id}-${o}`} className="flex cursor-pointer items-center gap-2.5 text-sm text-foreground">
                     <input
                       id={`q${pergunta.id}-${o}`}
@@ -671,7 +655,6 @@ export function ConsultaWizard({
                 ))}
               </div>
             )}
-
             {pergunta.campo === "peso_meta_kg" && preview?.avisoMetaPeso && (
               <div className="mt-3 flex items-start gap-2 rounded-xl border border-danger-500/30 bg-danger-500/10 px-3 py-2.5 text-xs text-foreground">
                 <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger-500" />
@@ -681,7 +664,6 @@ export function ConsultaWizard({
           </div>
         </CardContent>
       </Card>
-
       <div className="mt-5 flex items-center justify-between">
         <Button variante="secundaria" onClick={voltar}>
           <ChevronLeft className="h-4 w-4" /> Voltar
@@ -695,7 +677,6 @@ export function ConsultaWizard({
     </div>
   );
 }
-
 function Metrica({ label, valor, sub }: { label: string; valor: string; sub?: string }) {
   return (
     <div className="rounded-xl bg-black/[0.02] px-3 py-2.5 text-center">

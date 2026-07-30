@@ -19,11 +19,18 @@ import {
   diasDesde,
   calcularSequenciaAtual,
   semanaAtual,
-  DIAS_SEMANA,
+  diaSemanaHoje,
   DIAS_SEMANA_LABEL,
 } from "@/lib/utils/date";
 import { calcularConquistas } from "@/lib/nutrition/conquistas";
-import type { AvaliacaoNutricional, RefeicaoPlano, RegistroPeso, RegistroAgua, Receita } from "@/types/domain";
+import type {
+  AvaliacaoNutricional,
+  RefeicaoPlano,
+  RegistroPeso,
+  RegistroAgua,
+  RegistroConsumo,
+  Receita,
+} from "@/types/domain";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -33,8 +40,10 @@ export default async function DashboardPage() {
   if (!user) return null;
 
   const hoje = hojeISO();
-  const indiceDiaJs = new Date().getDay(); // 0 = domingo
-  const diaSemanaHoje = DIAS_SEMANA[(indiceDiaJs + 6) % 7]; // segunda=0 ... domingo=6
+  const diaHoje = diaSemanaHoje();
+  const diasSemana = semanaAtual();
+  const inicioSemanaISO = formatarData(diasSemana[0].data, "yyyy-MM-dd");
+  const fimSemanaISO = formatarData(diasSemana[6].data, "yyyy-MM-dd");
 
   const [
     { data: avaliacao },
@@ -42,11 +51,13 @@ export default async function DashboardPage() {
     { data: planoAtivo },
     { data: registrosPeso },
     { data: registrosAguaHoje },
+    { data: registrosConsumoSemana },
     { data: datasAguaTodas },
     { data: datasSono },
     { data: datasHumor },
     { data: datasExercicio },
     { data: datasMedidas },
+    { data: datasConsumoTodas },
   ] = await Promise.all([
     supabase
       .from("avaliacoes_nutricionais")
@@ -70,20 +81,29 @@ export default async function DashboardPage() {
       .order("data", { ascending: true })
       .limit(30),
     supabase.from("registros_agua").select("*").eq("usuario_id", user.id).eq("data", hoje),
+    // Registros reais de consumo (data específica, não dia da semana genérico)
+    // da semana corrente — fonte de verdade tanto pros macros de hoje quanto
+    // pro gráfico de adesão semanal (ver lib/nutrition/registrarConsumo.ts).
+    supabase
+      .from("registros_consumo")
+      .select("*")
+      .eq("usuario_id", user.id)
+      .gte("data", inicioSemanaISO)
+      .lte("data", fimSemanaISO),
     // Consultas leves (só a data), usadas exclusivamente pra calcular a
     // sequência de dias seguidos com pelo menos um registro (ver
-    // lib/utils/date.ts::calcularSequenciaAtual) — motor que já existia mas
-    // nunca aparecia em nenhuma tela.
+    // lib/utils/date.ts::calcularSequenciaAtual).
     supabase.from("registros_agua").select("data").eq("usuario_id", user.id),
     supabase.from("registros_sono").select("data").eq("usuario_id", user.id),
     supabase.from("registros_humor").select("data").eq("usuario_id", user.id),
     supabase.from("registros_exercicio").select("data").eq("usuario_id", user.id),
     supabase.from("registros_medidas").select("data").eq("usuario_id", user.id),
+    supabase.from("registros_consumo").select("data").eq("usuario_id", user.id),
   ]);
 
-  // Busca a semana inteira do plano (não só hoje) — usada tanto pra lista de
-  // "Refeições de hoje" quanto pro gráfico de adesão semanal, sem duplicar a
-  // consulta ao banco.
+  // Busca a semana inteira do plano (modelo recorrente por dia da semana) —
+  // usada só pra saber quais refeições existem e montar "Refeições de hoje".
+  // Quem manda no que foi realmente comido é registros_consumo, buscado acima.
   let refeicoesSemana: RefeicaoPlano[] = [];
   let receitasPorId = new Map<string, Receita>();
   if (planoAtivo) {
@@ -94,13 +114,20 @@ export default async function DashboardPage() {
       .order("horario", { ascending: true });
     refeicoesSemana = (data ?? []) as RefeicaoPlano[];
 
-    const idsReceitas = refeicoesSemana.map((r) => r.receita_id).filter((id): id is string => Boolean(id));
-    if (idsReceitas.length > 0) {
-      const { data: receitas } = await supabase.from("receitas").select("*").in("id", idsReceitas);
+    const idsReceitas = new Set<string>();
+    refeicoesSemana.forEach((r) => r.receita_id && idsReceitas.add(r.receita_id));
+    ((registrosConsumoSemana ?? []) as RegistroConsumo[]).forEach(
+      (r) => r.receita_id && idsReceitas.add(r.receita_id)
+    );
+
+    if (idsReceitas.size > 0) {
+      const { data: receitas } = await supabase.from("receitas").select("*").in("id", Array.from(idsReceitas));
       receitasPorId = new Map((receitas ?? []).map((r) => [r.id, r as Receita]));
     }
   }
-  const refeicoesHoje = refeicoesSemana.filter((r) => r.dia_semana === diaSemanaHoje);
+  const refeicoesHoje = refeicoesSemana.filter((r) => r.dia_semana === diaHoje);
+  const registrosSemana = (registrosConsumoSemana ?? []) as RegistroConsumo[];
+  const registrosHoje = registrosSemana.filter((r) => r.data === hoje);
 
   const av = avaliacao as AvaliacaoNutricional | null;
   const pesos = (registrosPeso ?? []) as RegistroPeso[];
@@ -124,43 +151,38 @@ export default async function DashboardPage() {
 
   const diasDesdeConsulta = diasDesde(av.criado_em);
 
-  // Macros consumidos hoje = soma das refeições já marcadas como consumidas
-  // (ver TodayMeals), multiplicadas pela quantidade de porções prescrita —
-  // nunca uma estimativa, é exatamente o que o paciente confirmou que comeu.
-  const macrosConsumidos = refeicoesHoje.reduce(
-    (soma, refeicao) => {
-      if (!refeicao.consumida || !refeicao.receita_id) return soma;
-      const receita = receitasPorId.get(refeicao.receita_id);
-      if (!receita) return soma;
-      const porcoes = refeicao.quantidade_porcoes || 1;
-      return {
-        proteinaG: soma.proteinaG + receita.proteina_g * porcoes,
-        carboidratoG: soma.carboidratoG + receita.carboidrato_g * porcoes,
-        gorduraG: soma.gorduraG + receita.gordura_g * porcoes,
-      };
-    },
+  // Macros consumidos hoje = soma direta dos registros reais de hoje (já
+  // calculados no momento do registro — ver registrarConsumo.ts), nunca uma
+  // estimativa a partir do plano.
+  const macrosConsumidos = registrosHoje.reduce(
+    (soma, registro) => ({
+      proteinaG: soma.proteinaG + registro.proteina_g,
+      carboidratoG: soma.carboidratoG + registro.carboidrato_g,
+      gorduraG: soma.gorduraG + registro.gordura_g,
+    }),
     { proteinaG: 0, carboidratoG: 0, gorduraG: 0 }
   );
 
-  // Adesão ao plano por dia da semana (segunda a domingo) — % das refeições
-  // prescritas naquele dia que já foram marcadas como consumidas. Dias
-  // depois de hoje ainda não têm como ter adesão (não aconteceram), então
-  // são marcados como "futuro" e aparecem como barra vazia, não como 0%.
-  const adesaoSemanal: DiaAdesao[] = semanaAtual().map(({ dia, data }) => {
+  // Adesão ao plano por dia da semana (segunda a domingo) DESTA semana
+  // específica — % das refeições prescritas naquele dia que já têm um
+  // registro real de consumo na data correspondente. Como os registros são
+  // por data (não por dia da semana genérico), a barra reseta sozinha toda
+  // semana. Dias depois de hoje ainda não têm como ter adesão, então são
+  // marcados como "futuro" e aparecem como barra vazia, não como 0%.
+  const adesaoSemanal: DiaAdesao[] = diasSemana.map(({ dia, data }) => {
     const dataISO = formatarData(data, "yyyy-MM-dd");
-    const refeicoesDoDia = refeicoesSemana.filter((r) => r.dia_semana === dia);
-    const total = refeicoesDoDia.length;
-    const consumidas = refeicoesDoDia.filter((r) => r.consumida).length;
+    const totalDoDia = refeicoesSemana.filter((r) => r.dia_semana === dia).length;
+    const consumidasDoDia = registrosSemana.filter((r) => r.data === dataISO).length;
     return {
       label: DIAS_SEMANA_LABEL[dia][0],
-      percentual: total > 0 ? (consumidas / total) * 100 : 0,
+      percentual: totalDoDia > 0 ? (consumidasDoDia / totalDoDia) * 100 : 0,
       futuro: dataISO > hoje,
       hoje: dataISO === hoje,
     };
   });
 
   // Sequência atual de dias seguidos com pelo menos um registro em qualquer
-  // frente (peso, água, sono, humor, exercício, medidas).
+  // frente (peso, água, sono, humor, exercício, medidas ou refeição comida).
   const todasAsDatas = [
     ...pesos.map((p) => p.data),
     ...((datasAguaTodas ?? []) as { data: string }[]).map((r) => r.data),
@@ -168,6 +190,7 @@ export default async function DashboardPage() {
     ...((datasHumor ?? []) as { data: string }[]).map((r) => r.data),
     ...((datasExercicio ?? []) as { data: string }[]).map((r) => r.data),
     ...((datasMedidas ?? []) as { data: string }[]).map((r) => r.data),
+    ...((datasConsumoTodas ?? []) as { data: string }[]).map((r) => r.data),
   ];
   const streakAtual = calcularSequenciaAtual(todasAsDatas);
 
@@ -254,7 +277,13 @@ export default async function DashboardPage() {
             <CardTitle>Refeições de hoje</CardTitle>
           </CardHeader>
           <CardContent>
-            <TodayMeals refeicoes={refeicoesHoje} />
+            <TodayMeals
+              refeicoes={refeicoesHoje}
+              registros={registrosHoje}
+              receitasPorId={receitasPorId}
+              usuarioId={user.id}
+              hoje={hoje}
+            />
           </CardContent>
         </Card>
 

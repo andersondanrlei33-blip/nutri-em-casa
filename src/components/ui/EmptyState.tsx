@@ -11,7 +11,7 @@ interface EmptyStateProps {
 /** Estado vazio elegante e consistente, usado em todos os módulos com listas. */
 export function EmptyState({ icone: Icone, titulo, descricao, acao }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-brand-50/40 px-6 py-14 text-center animate-fade-in-up">
+    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border bg-brand-50/40 px-6 py-14 text-center animate-fade-in-up">
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
         <Icone className="h-6 w-6 text-brand-600" />
       </div>

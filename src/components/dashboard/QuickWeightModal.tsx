@@ -10,8 +10,10 @@ import { hojeISO } from "@/lib/utils/date";
 
 /**
  * Botão + modal simples pra registrar o peso do dia direto do Dashboard,
- * sem precisar ir até Acompanhamento. Insere em registros_peso e recarrega
- * a página (o gráfico de evolução e o StatCard de peso são recalculados a
+ * sem precisar ir até Acompanhamento. Faz upsert em registros_peso (se já
+ * existir um registro pra hoje, atualiza em vez de dar erro de duplicidade
+ * — a tabela só permite 1 registro por usuário por dia) e recarrega a
+ * página (o gráfico de evolução e o StatCard de peso são recalculados a
  * partir dos dados novos, sem lógica duplicada aqui).
  */
 export function QuickWeightModal({ usuarioId }: { usuarioId: string }) {
@@ -25,11 +27,16 @@ export function QuickWeightModal({ usuarioId }: { usuarioId: string }) {
     if (!pesoNumero || pesoNumero <= 0) return toast.erro("Informe um peso válido.");
     setCarregando(true);
     const supabase = createClient();
-    const { error } = await supabase.from("registros_peso").insert({
-      usuario_id: usuarioId,
-      data: hojeISO(),
-      peso_kg: pesoNumero,
-    });
+    const { error } = await supabase
+      .from("registros_peso")
+      .upsert(
+        {
+          usuario_id: usuarioId,
+          data: hojeISO(),
+          peso_kg: pesoNumero,
+        },
+        { onConflict: "usuario_id,data" }
+      );
     setCarregando(false);
     if (error) return toast.erro("Erro ao registrar peso.");
     setAberto(false);

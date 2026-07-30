@@ -256,7 +256,7 @@ async function gerarPlanoComIA(
     const tagsExtras = await classificarCondicaoLivre(avaliacao.condicoes_saude_outras);
     tagsExtras.forEach((tag) => filtro.indicacoesPreferidas.add(tag));
   }
-  const templates = escolherTemplates(avaliacao.refeicoes_por_dia);
+  const templates = escolherTemplates(avaliacao.refeicoes_por_dia, avaliacao.meta_calorica);
   const categorias = [...new Set(templates.map((t) => t.categoria))];
   // Candidatas já filtradas por alergia/restrição — a única fonte de onde
   // uma receita pode vir, tanto pra IA (que só vê essa lista no prompt,
@@ -282,7 +282,6 @@ Crie um plano alimentar semanal (segunda a domingo) para o paciente abaixo, resp
 EXATAMENTE as metas calóricas e de macronutrientes calculadas.
 Dados do paciente:
 - Objetivo: ${avaliacao.objetivo}
-- Refeições por dia: ${avaliacao.refeicoes_por_dia}
 - Restrições alimentares: ${avaliacao.restricoes_alimentares.join(", ") || "nenhuma"}
 - Alergias: ${avaliacao.alergias.join(", ") || "nenhuma"}
 - Alimentos evitados: ${avaliacao.alimentos_evitados.join(", ") || "nenhum"}
@@ -331,7 +330,9 @@ Responda APENAS com um JSON válido no formato:
   ],
   "observacoes_nutricionista": "..."
 }
-Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
+Gere exatamente ${templates.length} refeições para cada um dos 7 dias, seguindo estes horários e categorias
+(pode ajustar o horário em minutos se fizer sentido, mas mantenha a categoria e a ordem):
+${templates.map((t) => `- ${t.horario} — ${t.categoria} (${t.nome})`).join("\n")}`;
   const resposta = await anthropic.messages.create({
     model: NUTRI_MODEL,
     max_tokens: 8000,
@@ -424,7 +425,7 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
  * genérica (sem inventar alimento) e sinaliza isso nas observações.
  */
 function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis: Receita[]): PlanoGerado {
-  const templates = escolherTemplates(avaliacao.refeicoes_por_dia);
+  const templates = escolherTemplates(avaliacao.refeicoes_por_dia, avaliacao.meta_calorica);
   const filtro: FiltroReceitas = construirFiltro(avaliacao);
   const candidatasPorCategoria = new Map<CategoriaReceita, Receita[]>();
   for (const categoria of new Set(templates.map((t) => t.categoria))) {
@@ -491,7 +492,16 @@ interface TemplateRefeicao {
   categoria: CategoriaReceita;
   descricao: string;
 }
-function escolherTemplates(refeicoesPorDia: number): TemplateRefeicao[] {
+/**
+ * Escolhe o conjunto de refeições do dia. Parte do número de refeições que
+ * o paciente informou na consulta, mas AUMENTA automaticamente (até 6) se a
+ * meta calórica for alta demais pra esse número de refeições — ex: uma meta
+ * de 3254 kcal em só 4 refeições exigiria ~813 kcal por refeição, mas a
+ * maior receita da biblioteca tem uns 550 kcal e a porção é limitada a no
+ * máximo 2x o tamanho original, então nunca daria pra bater a meta direito.
+ * Dividindo em mais refeições, cada uma pede uma porção realista.
+ */
+function escolherTemplates(refeicoesPorDia: number, metaCalorica: number): TemplateRefeicao[] {
   const conjuntos: Record<number, TemplateRefeicao[]> = {
     3: [
       { nome: "Café da manhã", horario: "07:30", categoria: "cafe_da_manha", descricao: "Refeição leve e proteica para começar o dia." },
@@ -520,5 +530,10 @@ function escolherTemplates(refeicoesPorDia: number): TemplateRefeicao[] {
       { nome: "Ceia", horario: "21:30", categoria: "lanche", descricao: "Ceia leve antes de dormir." },
     ],
   };
-  return conjuntos[refeicoesPorDia] ?? conjuntos[3];
+  const LIMITE_KCAL_POR_REFEICAO = 600;
+  let contagem = conjuntos[refeicoesPorDia] ? refeicoesPorDia : 3;
+  while (metaCalorica / contagem > LIMITE_KCAL_POR_REFEICAO && conjuntos[contagem + 1]) {
+    contagem += 1;
+  }
+  return conjuntos[contagem];
 }

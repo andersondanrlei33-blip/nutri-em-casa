@@ -2,39 +2,32 @@
  * Domain types shared across the app. These mirror the Supabase schema
  * defined in supabase/migrations/0001_init.sql — keep both in sync.
  */
-
 export type Genero = "feminino" | "masculino" | "outro";
-
 export type NivelAtividade =
   | "sedentario"
   | "leve"
   | "moderado"
   | "intenso"
   | "atleta";
-
 export type ObjetivoNutricional =
   | "emagrecimento"
   | "manutencao"
   | "ganho_massa"
   | "saude_geral"
   | "performance_esportiva";
-
 export type PlanoAssinatura = "gratuito" | "premium" | "anual" | "trial";
-
 export type StatusAssinatura =
   | "ativa"
   | "trial"
   | "cancelada"
   | "expirada"
   | "inadimplente";
-
 export type ProvedorPagamento =
   | "stripe"
   | "mercadopago"
   | "asaas"
   | "hotmart"
   | "kiwify";
-
 /** Lista fechada (não texto livre) — cada uma tem um ajuste clínico
  *  associado em lib/nutrition/calculations.ts::avaliarCondicoesSaude. */
 export type CondicaoSaude =
@@ -45,15 +38,12 @@ export type CondicaoSaude =
   | "hipotireoidismo"
   | "hipertireoidismo"
   | "colesterol_alto";
-
 /** Frequência de consumo de álcool informada na consulta — usada em
  *  lib/nutrition/calculations.ts::avaliarConsumoAlcool. */
 export type ConsumoAlcool = "nunca" | "raramente" | "moderado" | "frequente";
-
 /** Status de tabagismo informado na consulta — usado em
  *  lib/nutrition/calculations.ts::avaliarTabagismo. */
 export type StatusTabagismo = "nunca" | "ex_fumante" | "fumante";
-
 export interface Perfil {
   id: string;
   nome: string;
@@ -64,7 +54,6 @@ export interface Perfil {
   criado_em: string;
   atualizado_em: string;
 }
-
 export interface AvaliacaoNutricional {
   id: string;
   usuario_id: string;
@@ -116,7 +105,6 @@ export interface AvaliacaoNutricional {
   meta_fibra_g: number;
   meta_agua_ml: number;
   criado_em: string;
-
   // Campos da Consulta Nutricional de 40 perguntas (anamnese completa) —
   // todos opcionais/nulos em avaliações antigas, que só tinham os campos acima.
   profissao: string | null;
@@ -150,7 +138,6 @@ export interface AvaliacaoNutricional {
   ganho_peso_nao_intencional: string | null;
   como_conheceu: string | null;
 }
-
 export interface Receita {
   id: string;
   usuario_id: string | null;
@@ -181,7 +168,6 @@ export interface Receita {
   criado_em: string;
   atualizado_em: string;
 }
-
 /** Indicações de saúde por receita — vocabulário FECHADO, nunca livre.
  *  Usado tanto pras condições estruturadas (diabetes, hipertensão...) quanto
  *  pra classificação da IA do campo "outra condição" (sempre escolhendo
@@ -192,13 +178,11 @@ export type IndicacaoSaudeReceita =
   | "baixo_colesterol"
   | "controle_renal"
   | "alta_fibra";
-
 /** Nível de custo estimado do ingrediente principal da receita — usado em
  *  lib/nutrition/receitaMatching.ts pra priorizar receitas acessíveis (o
  *  público-alvo do app é majoritariamente sensível a preço; sem essa tag,
  *  uma receita com salmão podia entrar no plano de qualquer paciente). */
 export type CustoReceita = "baixo" | "medio" | "alto";
-
 export type CategoriaReceita =
   | "cafe_da_manha"
   | "almoco"
@@ -207,13 +191,11 @@ export type CategoriaReceita =
   | "sobremesa"
   | "pre_treino"
   | "pos_treino";
-
 export interface IngredienteReceita {
   nome: string;
   quantidade: number;
   unidade: string;
 }
-
 export interface PlanoAlimentar {
   id: string;
   usuario_id: string;
@@ -222,7 +204,6 @@ export interface PlanoAlimentar {
   ativo: boolean;
   criado_em: string;
 }
-
 export type DiaSemana =
   | "segunda"
   | "terca"
@@ -231,7 +212,6 @@ export type DiaSemana =
   | "sexta"
   | "sabado"
   | "domingo";
-
 export interface RefeicaoPlano {
   id: string;
   plano_id: string;
@@ -241,25 +221,31 @@ export interface RefeicaoPlano {
   horario: string;
   quantidade_porcoes: number;
   ordem: number;
+  /** @deprecated não usar mais — foi substituído por registros_consumo, que
+   *  guarda o consumo real por data específica (não por dia da semana
+   *  genérico, que nunca resetava). Mantido só porque a coluna ainda existe
+   *  no banco. */
   consumida: boolean;
   criado_em: string;
   /** Categoria da refeição (café da manhã, almoço, lanche...) — null em
    *  registros antigos gerados antes dessa coluna existir. */
   categoria: CategoriaReceita | null;
 }
-
 export interface RegistroConsumo {
   id: string;
   usuario_id: string;
   refeicao_plano_id: string | null;
   data: string;
+  /** Receita realmente registrada nessa data/refeição — pode ser diferente
+   *  da sugerida em RefeicaoPlano.receita_id quando o paciente troca
+   *  avulsamente pela tela de Receitas (ver lib/nutrition/registrarConsumo.ts). */
+  receita_id: string | null;
   calorias: number;
   proteina_g: number;
   carboidrato_g: number;
   gordura_g: number;
   criado_em: string;
 }
-
 export interface RegistroPeso {
   id: string;
   usuario_id: string;
@@ -268,7 +254,6 @@ export interface RegistroPeso {
   observacoes: string | null;
   criado_em: string;
 }
-
 export interface RegistroMedidas {
   id: string;
   usuario_id: string;
@@ -282,7 +267,6 @@ export interface RegistroMedidas {
   percentual_gordura: number | null;
   criado_em: string;
 }
-
 export interface RegistroAgua {
   id: string;
   usuario_id: string;
@@ -290,7 +274,6 @@ export interface RegistroAgua {
   quantidade_ml: number;
   criado_em: string;
 }
-
 export interface RegistroSono {
   id: string;
   usuario_id: string;
@@ -299,7 +282,6 @@ export interface RegistroSono {
   qualidade: number;
   criado_em: string;
 }
-
 export interface RegistroHumor {
   id: string;
   usuario_id: string;
@@ -309,7 +291,6 @@ export interface RegistroHumor {
   observacoes: string | null;
   criado_em: string;
 }
-
 export interface RegistroExercicio {
   id: string;
   usuario_id: string;
@@ -321,7 +302,6 @@ export interface RegistroExercicio {
   observacoes: string | null;
   criado_em: string;
 }
-
 export interface Assinatura {
   id: string;
   usuario_id: string;

@@ -50,12 +50,19 @@ export function semanaAtual(referencia = new Date()) {
   return DIAS_SEMANA.map((dia, i) => ({ dia, data: addDays(inicio, i) }));
 }
 
+/** Dia da semana de hoje, no mesmo formato usado em dia_semana (segunda..domingo). */
+export function diaSemanaHoje() {
+  const indiceDiaJs = new Date().getDay(); // 0 = domingo
+  return DIAS_SEMANA[(indiceDiaJs + 6) % 7];
+}
+
 /**
  * Calcula a sequência atual de dias consecutivos com pelo menos um registro
- * (peso, água, sono, humor, exercício ou medidas), a partir de uma lista de
- * datas em formato "yyyy-MM-dd" (podem se repetir e vir de fontes diferentes).
- * Se hoje ainda não tem nenhum registro, isso não quebra a sequência — o dia
- * ainda não terminou — e a contagem passa a considerar a partir de ontem.
+ * (peso, água, sono, humor, exercício, medidas ou refeição comida), a partir
+ * de uma lista de datas em formato "yyyy-MM-dd" (podem se repetir e vir de
+ * fontes diferentes). Se hoje ainda não tem nenhum registro, isso não quebra
+ * a sequência — o dia ainda não terminou — e a contagem passa a considerar
+ * a partir de ontem.
  */
 export function calcularSequenciaAtual(datas: string[]): number {
   const unicas = new Set(datas);

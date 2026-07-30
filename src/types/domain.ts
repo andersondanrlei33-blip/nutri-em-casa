@@ -175,6 +175,9 @@ export interface Receita {
   /** Vocabulário fechado: ver IndicacaoSaudeReceita. Usado pra priorizar
    *  (não bloquear) receitas pra condições de saúde — ver receitaMatching.ts. */
   indicacoes_saude: IndicacaoSaudeReceita[];
+  /** Ver CustoReceita. Usado pra priorizar (não bloquear) receitas mais
+   *  acessíveis — ver receitaMatching.ts. */
+  custo: CustoReceita;
   criado_em: string;
   atualizado_em: string;
 }
@@ -189,6 +192,12 @@ export type IndicacaoSaudeReceita =
   | "baixo_colesterol"
   | "controle_renal"
   | "alta_fibra";
+
+/** Nível de custo estimado do ingrediente principal da receita — usado em
+ *  lib/nutrition/receitaMatching.ts pra priorizar receitas acessíveis (o
+ *  público-alvo do app é majoritariamente sensível a preço; sem essa tag,
+ *  uma receita com salmão podia entrar no plano de qualquer paciente). */
+export type CustoReceita = "baixo" | "medio" | "alto";
 
 export type CategoriaReceita =
   | "cafe_da_manha"

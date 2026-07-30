@@ -5,10 +5,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { WeightChart } from "@/components/dashboard/WeightChart";
 import { TodayMeals } from "@/components/dashboard/TodayMeals";
+import { MacroBars } from "@/components/dashboard/MacroBars";
+import { ConquistasCard } from "@/components/dashboard/ConquistasCard";
+import { WeeklyAdherenceChart, type DiaAdesao } from "@/components/dashboard/WeeklyAdherenceChart";
+import { QuickWaterButton } from "@/components/dashboard/QuickWaterButton";
+import { QuickWeightModal } from "@/components/dashboard/QuickWeightModal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
-import { hojeISO, formatarDataLonga, diasDesde, DIAS_SEMANA } from "@/lib/utils/date";
-import type { AvaliacaoNutricional, RefeicaoPlano, RegistroPeso, RegistroAgua } from "@/types/domain";
+import {
+  hojeISO,
+  formatarData,
+  formatarDataLonga,
+  diasDesde,
+  calcularSequenciaAtual,
+  semanaAtual,
+  DIAS_SEMANA,
+  DIAS_SEMANA_LABEL,
+} from "@/lib/utils/date";
+import { calcularConquistas } from "@/lib/nutrition/conquistas";
+import type { AvaliacaoNutricional, RefeicaoPlano, RegistroPeso, RegistroAgua, Receita } from "@/types/domain";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -23,16 +38,28 @@ export default async function DashboardPage() {
 
   const [
     { data: avaliacao },
+    { data: primeiraAvaliacao },
     { data: planoAtivo },
     { data: registrosPeso },
     { data: registrosAguaHoje },
-    { data: metas },
+    { data: datasAguaTodas },
+    { data: datasSono },
+    { data: datasHumor },
+    { data: datasExercicio },
+    { data: datasMedidas },
   ] = await Promise.all([
     supabase
       .from("avaliacoes_nutricionais")
       .select("*")
       .eq("usuario_id", user.id)
       .order("criado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("avaliacoes_nutricionais")
+      .select("criado_em, peso_kg")
+      .eq("usuario_id", user.id)
+      .order("criado_em", { ascending: true })
       .limit(1)
       .maybeSingle(),
     supabase.from("planos_alimentares").select("id").eq("usuario_id", user.id).eq("ativo", true).maybeSingle(),
@@ -43,19 +70,37 @@ export default async function DashboardPage() {
       .order("data", { ascending: true })
       .limit(30),
     supabase.from("registros_agua").select("*").eq("usuario_id", user.id).eq("data", hoje),
-    supabase.from("metas").select("*").eq("usuario_id", user.id).eq("concluida", false).limit(3),
+    // Consultas leves (só a data), usadas exclusivamente pra calcular a
+    // sequência de dias seguidos com pelo menos um registro (ver
+    // lib/utils/date.ts::calcularSequenciaAtual) — motor que já existia mas
+    // nunca aparecia em nenhuma tela.
+    supabase.from("registros_agua").select("data").eq("usuario_id", user.id),
+    supabase.from("registros_sono").select("data").eq("usuario_id", user.id),
+    supabase.from("registros_humor").select("data").eq("usuario_id", user.id),
+    supabase.from("registros_exercicio").select("data").eq("usuario_id", user.id),
+    supabase.from("registros_medidas").select("data").eq("usuario_id", user.id),
   ]);
 
-  let refeicoesHoje: RefeicaoPlano[] = [];
+  // Busca a semana inteira do plano (não só hoje) — usada tanto pra lista de
+  // "Refeições de hoje" quanto pro gráfico de adesão semanal, sem duplicar a
+  // consulta ao banco.
+  let refeicoesSemana: RefeicaoPlano[] = [];
+  let receitasPorId = new Map<string, Receita>();
   if (planoAtivo) {
     const { data } = await supabase
       .from("refeicoes_plano")
       .select("*")
       .eq("plano_id", planoAtivo.id)
-      .eq("dia_semana", diaSemanaHoje)
       .order("horario", { ascending: true });
-    refeicoesHoje = (data ?? []) as RefeicaoPlano[];
+    refeicoesSemana = (data ?? []) as RefeicaoPlano[];
+
+    const idsReceitas = refeicoesSemana.map((r) => r.receita_id).filter((id): id is string => Boolean(id));
+    if (idsReceitas.length > 0) {
+      const { data: receitas } = await supabase.from("receitas").select("*").in("id", idsReceitas);
+      receitasPorId = new Map((receitas ?? []).map((r) => [r.id, r as Receita]));
+    }
   }
+  const refeicoesHoje = refeicoesSemana.filter((r) => r.dia_semana === diaSemanaHoje);
 
   const av = avaliacao as AvaliacaoNutricional | null;
   const pesos = (registrosPeso ?? []) as RegistroPeso[];
@@ -78,6 +123,66 @@ export default async function DashboardPage() {
   }
 
   const diasDesdeConsulta = diasDesde(av.criado_em);
+
+  // Macros consumidos hoje = soma das refeições já marcadas como consumidas
+  // (ver TodayMeals), multiplicadas pela quantidade de porções prescrita —
+  // nunca uma estimativa, é exatamente o que o paciente confirmou que comeu.
+  const macrosConsumidos = refeicoesHoje.reduce(
+    (soma, refeicao) => {
+      if (!refeicao.consumida || !refeicao.receita_id) return soma;
+      const receita = receitasPorId.get(refeicao.receita_id);
+      if (!receita) return soma;
+      const porcoes = refeicao.quantidade_porcoes || 1;
+      return {
+        proteinaG: soma.proteinaG + receita.proteina_g * porcoes,
+        carboidratoG: soma.carboidratoG + receita.carboidrato_g * porcoes,
+        gorduraG: soma.gorduraG + receita.gordura_g * porcoes,
+      };
+    },
+    { proteinaG: 0, carboidratoG: 0, gorduraG: 0 }
+  );
+
+  // Adesão ao plano por dia da semana (segunda a domingo) — % das refeições
+  // prescritas naquele dia que já foram marcadas como consumidas. Dias
+  // depois de hoje ainda não têm como ter adesão (não aconteceram), então
+  // são marcados como "futuro" e aparecem como barra vazia, não como 0%.
+  const adesaoSemanal: DiaAdesao[] = semanaAtual().map(({ dia, data }) => {
+    const dataISO = formatarData(data, "yyyy-MM-dd");
+    const refeicoesDoDia = refeicoesSemana.filter((r) => r.dia_semana === dia);
+    const total = refeicoesDoDia.length;
+    const consumidas = refeicoesDoDia.filter((r) => r.consumida).length;
+    return {
+      label: DIAS_SEMANA_LABEL[dia][0],
+      percentual: total > 0 ? (consumidas / total) * 100 : 0,
+      futuro: dataISO > hoje,
+      hoje: dataISO === hoje,
+    };
+  });
+
+  // Sequência atual de dias seguidos com pelo menos um registro em qualquer
+  // frente (peso, água, sono, humor, exercício, medidas).
+  const todasAsDatas = [
+    ...pesos.map((p) => p.data),
+    ...((datasAguaTodas ?? []) as { data: string }[]).map((r) => r.data),
+    ...((datasSono ?? []) as { data: string }[]).map((r) => r.data),
+    ...((datasHumor ?? []) as { data: string }[]).map((r) => r.data),
+    ...((datasExercicio ?? []) as { data: string }[]).map((r) => r.data),
+    ...((datasMedidas ?? []) as { data: string }[]).map((r) => r.data),
+  ];
+  const streakAtual = calcularSequenciaAtual(todasAsDatas);
+
+  const pesoInicial = (primeiraAvaliacao as { peso_kg: number } | null)?.peso_kg ?? av.peso_kg;
+  const dataInicioJornada = (primeiraAvaliacao as { criado_em: string } | null)?.criado_em ?? av.criado_em;
+  const metaBatida = av.peso_meta_kg != null && pesoAtual != null && Math.abs(pesoAtual - av.peso_meta_kg) < 0.5;
+
+  const conquistas = calcularConquistas({
+    diasTotais: diasDesde(dataInicioJornada),
+    objetivo: av.objetivo,
+    pesoInicial,
+    pesoAtual,
+    metaBatida,
+    streakAtual,
+  });
 
   return (
     <div className="space-y-6">
@@ -120,20 +225,30 @@ export default async function DashboardPage() {
           titulo="Água hoje"
           valor={`${(aguaHojeMl / 1000).toFixed(1)} L`}
           progresso={{ atual: aguaHojeMl, meta: av.meta_agua_ml }}
+          acao={<QuickWaterButton usuarioId={user.id} />}
         />
         <StatCard icone={Activity} titulo="Meta calórica" valor={`${av.meta_calorica} kcal`} sub={`TDEE: ${av.tdee} kcal`} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Evolução do peso</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <WeightChart pontos={pesos.map((p) => ({ data: p.data, peso_kg: p.peso_kg }))} />
-          </CardContent>
-        </Card>
+      <MacroBars
+        consumido={macrosConsumidos}
+        meta={{
+          proteinaG: av.meta_proteina_g,
+          carboidratoG: av.meta_carboidrato_g,
+          gorduraG: av.meta_gordura_g,
+        }}
+      />
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Adesão ao plano essa semana</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WeeklyAdherenceChart dados={adesaoSemanal} />
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-5 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Refeições de hoje</CardTitle>
@@ -142,30 +257,27 @@ export default async function DashboardPage() {
             <TodayMeals refeicoes={refeicoesHoje} />
           </CardContent>
         </Card>
-      </div>
 
-      {metas && metas.length > 0 && (
+        <ConquistasCard conquistas={conquistas} />
+
         <Card>
           <CardHeader>
-            <CardTitle>Suas metas</CardTitle>
-            <Link href="/metas" className="text-sm font-medium text-brand-600 hover:underline">
-              Ver todas
-            </Link>
+            <CardTitle>Evolução do peso</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-3">
-            {metas.map((meta) => (
-              <div key={meta.id} className="rounded-xl bg-black/[0.02] p-4">
-                <p className="text-sm font-medium text-foreground">{meta.titulo}</p>
-                {meta.valor_alvo != null && (
-                  <p className="mt-1 text-xs text-muted">
-                    {meta.valor_atual ?? 0} / {meta.valor_alvo} {meta.unidade}
-                  </p>
-                )}
-              </div>
-            ))}
+          <CardContent>
+            {pesos.length < 2 ? (
+              <EmptyState
+                icone={Scale}
+                titulo="Ainda sem histórico suficiente"
+                descricao="Registre seu peso por alguns dias para ver a evolução aqui."
+                acao={<QuickWeightModal usuarioId={user.id} />}
+              />
+            ) : (
+              <WeightChart pontos={pesos.map((p) => ({ data: p.data, peso_kg: p.peso_kg }))} />
+            )}
           </CardContent>
         </Card>
-      )}
+      </div>
     </div>
   );
 }

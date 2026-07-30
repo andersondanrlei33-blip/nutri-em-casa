@@ -1,3 +1,4 @@
+import { ReactNode } from "react";
 import { LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -8,9 +9,10 @@ interface StatCardProps {
   valor: string;
   sub?: string;
   progresso?: { atual: number; meta: number };
+  acao?: ReactNode;
 }
 
-export function StatCard({ icone: Icone, titulo, valor, sub, progresso }: StatCardProps) {
+export function StatCard({ icone: Icone, titulo, valor, sub, progresso, acao }: StatCardProps) {
   return (
     <Card className="p-5">
       <div className="flex items-center gap-3">
@@ -28,6 +30,7 @@ export function StatCard({ icone: Icone, titulo, valor, sub, progresso }: StatCa
           <ProgressBar valor={progresso.atual} max={progresso.meta} />
         </div>
       )}
+      {acao && <div className="mt-3">{acao}</div>}
     </Card>
   );
 }

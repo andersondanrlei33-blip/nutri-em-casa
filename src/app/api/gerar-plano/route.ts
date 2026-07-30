@@ -49,6 +49,37 @@ const CorpoSchema = z.object({
   gestante: z.boolean().default(false),
   lactante: z.boolean().default(false),
   historico_transtorno_alimentar: z.boolean().default(false),
+
+  // Campos da Consulta Nutricional de 40 perguntas (anamnese completa).
+  // Quase tudo aqui é registro/contexto — não entra em nenhum cálculo,
+  // exceto o que está anotado abaixo.
+  profissao: z.string().nullable().optional(),
+  tipo_suporte_esperado: z.string().nullable().optional(),
+  horas_sono: z.string().nullable().optional(),
+  insonia: z.boolean().nullable().optional(), // reforça aviso de sono (avaliarSonoEEstresse)
+  medicacao_sono: z.string().nullable().optional(),
+  disposicao_manha: z.string().nullable().optional(),
+  disposicao_tarde: z.string().nullable().optional(),
+  disposicao_noite: z.string().nullable().optional(),
+  concentracao: z.string().nullable().optional(),
+  memoria_recente: z.string().nullable().optional(),
+  memoria_antiga: z.string().nullable().optional(),
+  rotina_trabalho: z.string().nullable().optional(),
+  doencas_familiares: z.array(z.string()).default([]),
+  historico_cirurgias: z.string().nullable().optional(), // escaneado junto com condicoes_saude_outras
+  suplementos_em_uso: z.string().nullable().optional(),
+  dieta_anterior: z.string().nullable().optional(),
+  ingestao_agua_copos: z.string().nullable().optional(),
+  quem_prepara_comida: z.string().nullable().optional(),
+  refeicao_sozinho_ou_acompanhado: z.string().nullable().optional(),
+  horario_mais_fome: z.array(z.string()).default([]),
+  mastigacao: z.string().nullable().optional(),
+  preferencia_sabor: z.array(z.string()).default([]),
+  frequencia_restaurante: z.string().nullable().optional(),
+  historico_dietetico: z.string().nullable().optional(),
+  perda_peso_nao_intencional: z.string().nullable().optional(), // gera aviso automático
+  ganho_peso_nao_intencional: z.string().nullable().optional(), // gera aviso automático
+  como_conheceu: z.string().nullable().optional(),
 });
 
 /**
@@ -93,6 +124,11 @@ export async function POST(request: Request) {
     condicoesSaudeOutras: dados.condicoes_saude_outras,
     tabagismo: dados.tabagismo,
     observacoesPaciente: dados.observacoes,
+    pesoMetaKg: dados.peso_meta_kg,
+    insonia: dados.insonia ?? false,
+    historicoCirurgias: dados.historico_cirurgias,
+    perdaPesoNaoIntencional: dados.perda_peso_nao_intencional,
+    ganhoPesoNaoIntencional: dados.ganho_peso_nao_intencional,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase
@@ -105,7 +141,10 @@ export async function POST(request: Request) {
       genero: dados.genero,
       nivel_atividade: dados.nivel_atividade,
       objetivo: dados.objetivo,
-      peso_meta_kg: dados.peso_meta_kg ?? null,
+      // Nunca persiste a meta de peso bruta enviada pelo cliente — usa o
+      // valor já passado pela trava de segurança (avaliarSegurancaMetaPeso),
+      // que zera a meta quando é perigosa (ver lib/nutrition/calculations.ts).
+      peso_meta_kg: resultado.pesoMetaKg,
       restricoes_alimentares: dados.restricoes_alimentares,
       alergias: dados.alergias,
       condicoes_saude: dados.condicoes_saude,
@@ -134,6 +173,33 @@ export async function POST(request: Request) {
       meta_gordura_g: resultado.macros.gorduraG,
       meta_fibra_g: resultado.macros.fibraG,
       meta_agua_ml: resultado.aguaMl,
+      profissao: dados.profissao || null,
+      tipo_suporte_esperado: dados.tipo_suporte_esperado || null,
+      horas_sono: dados.horas_sono || null,
+      insonia: dados.insonia ?? null,
+      medicacao_sono: dados.medicacao_sono || null,
+      disposicao_manha: dados.disposicao_manha || null,
+      disposicao_tarde: dados.disposicao_tarde || null,
+      disposicao_noite: dados.disposicao_noite || null,
+      concentracao: dados.concentracao || null,
+      memoria_recente: dados.memoria_recente || null,
+      memoria_antiga: dados.memoria_antiga || null,
+      rotina_trabalho: dados.rotina_trabalho || null,
+      doencas_familiares: dados.doencas_familiares,
+      historico_cirurgias: dados.historico_cirurgias || null,
+      suplementos_em_uso: dados.suplementos_em_uso || null,
+      dieta_anterior: dados.dieta_anterior || null,
+      ingestao_agua_copos: dados.ingestao_agua_copos || null,
+      quem_prepara_comida: dados.quem_prepara_comida || null,
+      refeicao_sozinho_ou_acompanhado: dados.refeicao_sozinho_ou_acompanhado || null,
+      horario_mais_fome: dados.horario_mais_fome,
+      mastigacao: dados.mastigacao || null,
+      preferencia_sabor: dados.preferencia_sabor,
+      frequencia_restaurante: dados.frequencia_restaurante || null,
+      historico_dietetico: dados.historico_dietetico || null,
+      perda_peso_nao_intencional: dados.perda_peso_nao_intencional || null,
+      ganho_peso_nao_intencional: dados.ganho_peso_nao_intencional || null,
+      como_conheceu: dados.como_conheceu || null,
     })
     .select()
     .single();
@@ -209,5 +275,6 @@ export async function POST(request: Request) {
     observacoesNutricionista: planoGerado.observacoes_nutricionista,
     avisos: resultado.avisos,
     resumoConsulta: resultado.resumo,
+    avisoMetaPeso: resultado.avisoMetaPeso,
   });
 }

@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, BookOpen } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -9,9 +8,9 @@ import { Input, Select } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RecipeCard } from "@/components/receitas/RecipeCard";
 import { RecipeForm, type DadosFormularioReceita } from "@/components/receitas/RecipeForm";
+import { AcoesReceita } from "@/components/receitas/AcoesReceita";
 import { toast } from "@/components/ui/Toast";
 import type { Receita, CategoriaReceita } from "@/types/domain";
-
 const CATEGORIAS: { valor: CategoriaReceita | "todas"; label: string }[] = [
   { valor: "todas", label: "Todas as categorias" },
   { valor: "cafe_da_manha", label: "Café da manhã" },
@@ -22,30 +21,25 @@ const CATEGORIAS: { valor: CategoriaReceita | "todas"; label: string }[] = [
   { valor: "pre_treino", label: "Pré-treino" },
   { valor: "pos_treino", label: "Pós-treino" },
 ];
-
 export default function ReceitasPage() {
   const { user } = useUser();
   const supabase = createClient();
-
   const [receitas, setReceitas] = useState<Receita[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
   const [categoria, setCategoria] = useState<CategoriaReceita | "todas">("todas");
   const [somenteFavoritas, setSomenteFavoritas] = useState(false);
   const [modalAberto, setModalAberto] = useState<{ receita: Receita | null } | null>(null);
-
   useEffect(() => {
     carregarReceitas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
-
   async function carregarReceitas() {
     setCarregando(true);
     const { data } = await supabase.from("receitas").select("*").order("nome", { ascending: true });
     setReceitas((data ?? []) as Receita[]);
     setCarregando(false);
   }
-
   const filtradas = useMemo(() => {
     return receitas.filter((r) => {
       if (categoria !== "todas" && r.categoria !== categoria) return false;
@@ -54,10 +48,7 @@ export default function ReceitasPage() {
       return true;
     });
   }, [receitas, categoria, somenteFavoritas, busca]);
-
   async function alternarFavorito(receita: Receita) {
-    // Receitas globais (usuario_id null) não podem ser alteradas — duplicamos
-    // como receita própria já favoritada, preservando a biblioteca original.
     if (!receita.usuario_id) {
       await duplicar(receita, true);
       return;
@@ -71,7 +62,6 @@ export default function ReceitasPage() {
     if (error) return toast.erro("Erro ao favoritar receita.");
     setReceitas((prev) => prev.map((r) => (r.id === receita.id ? (data as Receita) : r)));
   }
-
   async function duplicar(receita: Receita, favoritarNaCopia = false) {
     if (!user) return;
     const { id: _id, criado_em: _c, atualizado_em: _a, ...resto } = receita;
@@ -84,17 +74,14 @@ export default function ReceitasPage() {
     setReceitas((prev) => [data as Receita, ...prev]);
     toast.sucesso("Receita duplicada para sua biblioteca.");
   }
-
   async function excluir(id: string) {
     const { error } = await supabase.from("receitas").delete().eq("id", id);
     if (error) return toast.erro("Erro ao excluir receita.");
     setReceitas((prev) => prev.filter((r) => r.id !== id));
     toast.sucesso("Receita excluída.");
   }
-
   async function salvar(dados: DadosFormularioReceita) {
     if (!user || !modalAberto) return;
-
     if (modalAberto.receita) {
       const { data, error } = await supabase
         .from("receitas")
@@ -117,7 +104,6 @@ export default function ReceitasPage() {
     }
     setModalAberto(null);
   }
-
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -129,7 +115,6 @@ export default function ReceitasPage() {
           <Plus className="h-4 w-4" /> Nova receita
         </Button>
       </div>
-
       <div className="mb-5 flex flex-wrap gap-3">
         <div className="relative min-w-[200px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
@@ -149,7 +134,6 @@ export default function ReceitasPage() {
           ★ Favoritas
         </button>
       </div>
-
       {carregando ? (
         <div className="py-16 text-center text-sm text-muted">Carregando receitas...</div>
       ) : filtradas.length === 0 ? (
@@ -166,19 +150,20 @@ export default function ReceitasPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtradas.map((receita) => (
-            <RecipeCard
-              key={receita.id}
-              receita={receita}
-              ehPropria={receita.usuario_id === user?.id}
-              aoAlternarFavorito={() => alternarFavorito(receita)}
-              aoDuplicar={() => duplicar(receita)}
-              aoEditar={receita.usuario_id === user?.id ? () => setModalAberto({ receita }) : undefined}
-              aoExcluir={receita.usuario_id === user?.id ? () => excluir(receita.id) : undefined}
-            />
+            <div key={receita.id}>
+              <RecipeCard
+                receita={receita}
+                ehPropria={receita.usuario_id === user?.id}
+                aoAlternarFavorito={() => alternarFavorito(receita)}
+                aoDuplicar={() => duplicar(receita)}
+                aoEditar={receita.usuario_id === user?.id ? () => setModalAberto({ receita }) : undefined}
+                aoExcluir={receita.usuario_id === user?.id ? () => excluir(receita.id) : undefined}
+              />
+              {user && <AcoesReceita receita={receita} usuarioId={user.id} />}
+            </div>
           ))}
         </div>
       )}
-
       {modalAberto && (
         <RecipeForm aberto aoFechar={() => setModalAberto(null)} aoSalvar={salvar} receitaExistente={modalAberto.receita} />
       )}

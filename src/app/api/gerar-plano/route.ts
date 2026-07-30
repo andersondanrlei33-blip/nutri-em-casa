@@ -129,6 +129,13 @@ export async function POST(request: Request) {
     historicoCirurgias: dados.historico_cirurgias,
     perdaPesoNaoIntencional: dados.perda_peso_nao_intencional,
     ganhoPesoNaoIntencional: dados.ganho_peso_nao_intencional,
+    horasSono: dados.horas_sono,
+    ingestaoAguaCopos: dados.ingestao_agua_copos,
+    dietaAnterior: dados.dieta_anterior,
+    doencasFamiliares: dados.doencas_familiares,
+    rotinaTrabalho: dados.rotina_trabalho,
+    mastigacao: dados.mastigacao,
+    frequenciaRestaurante: dados.frequencia_restaurante,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase

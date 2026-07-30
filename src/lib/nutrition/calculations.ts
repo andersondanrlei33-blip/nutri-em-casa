@@ -457,6 +457,200 @@ export function avaliarObjetivoVsRiscoCardiometabolico(
 }
 
 /**
+ * Cruzamento objetivo x nível de atividade física (pergunta antes coletada
+ * e nunca usada). Referência: diretriz OMS 2020 de atividade física —
+ * 150-300 min/semana de intensidade moderada (ou 75-150 min intensa) +
+ * fortalecimento muscular 2x/semana ou mais.
+ *
+ * Regra deliberadamente diferente conforme o nível atual, seguindo o
+ * raciocínio de um nutricionista real: se a pessoa já está ativa (moderado
+ * ou mais) e o objetivo é emagrecimento, o problema raramente é "fazer mais
+ * exercício" — é mais produtivo olhar pra outros fatores (álcool, sono,
+ * adesão alimentar), que já são avaliados em outras funções deste arquivo.
+ */
+export function avaliarAtividadeVsObjetivo(
+  nivelAtividade: NivelAtividade,
+  objetivo: ObjetivoNutricional
+): string[] {
+  if (objetivo !== "emagrecimento") return [];
+
+  if (nivelAtividade === "sedentario" || nivelAtividade === "leve") {
+    return [
+      "Seu objetivo é emagrecimento e seu nível de atividade física atual é baixo. A recomendação da OMS é de " +
+        "150 a 300 minutos por semana de atividade moderada (ou 75-150 minutos de atividade intensa), mais " +
+        "fortalecimento muscular 2x ou mais por semana — aumentar isso de forma gradual tende a acelerar bastante " +
+        "o resultado, além da alimentação.",
+    ];
+  }
+
+  return [
+    "Seu objetivo é emagrecimento e você já tem um nível de atividade física bom. Se o peso não estiver descendo " +
+      "mesmo assim, o mais produtivo geralmente não é adicionar ainda mais exercício — vale olhar com mais atenção " +
+      "para consumo de álcool, qualidade do sono e adesão real à alimentação, que costumam pesar mais nesse cenário.",
+  ];
+}
+
+/**
+ * Duração do sono informada (horas_sono) — referência National Sleep
+ * Foundation: 7 a 9 horas por noite para adultos. Avisa mesmo que a pessoa
+ * tenha respondido que considera a própria qualidade de sono boa em outro
+ * campo, porque duração curta já é um fator de risco isolado para apetite e
+ * controle de peso, independente de "qualidade" percebida.
+ */
+export function avaliarSonoDuracao(horasSono: string | null | undefined): string[] {
+  if (horasSono === "< 4 horas" || horasSono === "4 a 6 horas") {
+    return [
+      "Você relatou dormir menos que o recomendado (a referência para adultos é de 7 a 9 horas por noite). Sono " +
+        "curto está associado a mais fome ao longo do dia e mais dificuldade de controlar o peso, mesmo quando a " +
+        "pessoa sente que a qualidade do sono é boa.",
+    ];
+  }
+  return [];
+}
+
+/**
+ * Compara a ingestão de água relatada (ingestao_agua_copos, em copos de
+ * ~250ml) com a meta já calculada por calcularAguaRecomendada — campo que
+ * antes era coletado e nunca comparado com nada. Só avisa se a ingestão
+ * relatada estiver visivelmente abaixo da meta (>20% abaixo), pra não gerar
+ * aviso por uma diferença pequena que pode só ser imprecisão na resposta.
+ */
+export function avaliarHidratacaoReal(
+  ingestaoAguaCopos: string | null | undefined,
+  metaAguaMl: number
+): string[] {
+  const copos = ingestaoAguaCopos != null ? parseInt(ingestaoAguaCopos, 10) : NaN;
+  if (Number.isNaN(copos)) return [];
+
+  const aguaRelatadaMl = copos * 250;
+  if (aguaRelatadaMl < metaAguaMl * 0.8) {
+    const coposFaltando = Math.max(1, Math.ceil((metaAguaMl - aguaRelatadaMl) / 250));
+    return [
+      `Pelo que você relatou, sua ingestão de água está abaixo da sua meta calculada (${metaAguaMl}ml/dia) — ` +
+        `tente incluir mais ${coposFaltando} copo(s) de ~250ml por dia.`,
+    ];
+  }
+  return [];
+}
+
+/**
+ * Histórico de dietas anteriores (dieta_anterior). Deliberadamente NÃO
+ * tentamos interpretar o texto livre pra adivinhar se deu certo ou não —
+ * mesma lógica de avaliarMedicamentos: texto livre é território arriscado
+ * pra afirmação clínica específica. Só usamos a presença de uma resposta
+ * (diferente de "Não") como sinal de que a pessoa já tentou antes, pra
+ * incentivar uma abordagem mais gradual/sustentável desta vez.
+ */
+export function avaliarHistoricoDietas(dietaAnterior: string | null | undefined): string[] {
+  if (!dietaAnterior || normalizar(dietaAnterior) === "nao") return [];
+  return [
+    "Você já tentou seguir alguma dieta antes. Tentativas anteriores que não se sustentaram no longo prazo " +
+      "geralmente pedem um ritmo mais gradual desta vez (metas menores, mudanças que cabem na sua rotina) em vez " +
+      "de um déficit mais agressivo — isso tende a durar mais.",
+  ];
+}
+
+/**
+ * Histórico FAMILIAR de doenças (doencas_familiares) x condições que a
+ * PRÓPRIA pessoa já tem. Referência: histórico familiar de diabetes,
+ * hipertensão ou doença cardiovascular aumenta o risco de 1.1 a 5.6x de
+ * desenvolver uma condição relacionada. Só avisa quando a pessoa tem o
+ * histórico familiar mas AINDA NÃO relatou a condição em si — nunca
+ * diagnostica, só sugere rastreio.
+ */
+export function avaliarRiscoFamiliar(
+  doencasFamiliares: string[],
+  condicoesSaude: CondicaoSaude[],
+  classificacaoImc: string
+): string[] {
+  const avisos: string[] = [];
+  const familia = new Set(doencasFamiliares);
+  const temDiabetesPropria = condicoesSaude.includes("diabetes_tipo1") || condicoesSaude.includes("diabetes_tipo2");
+  const temHipertensaoPropria = condicoesSaude.includes("hipertensao");
+
+  if (familia.has("Diabetes") && !temDiabetesPropria) {
+    avisos.push(
+      "Você tem histórico familiar de diabetes. Isso aumenta seu risco pessoal, mesmo sem diagnóstico hoje — vale " +
+        "considerar um rastreio de glicemia com seu médico, principalmente se tiver outros fatores de risco."
+    );
+  }
+  if (familia.has("Hipertensão") && !temHipertensaoPropria) {
+    avisos.push(
+      "Você tem histórico familiar de hipertensão. Vale acompanhar sua pressão arterial periodicamente, mesmo sem " +
+        "diagnóstico hoje."
+    );
+  }
+  if (familia.has("Doença cardiovascular") && !temDiabetesPropria && !temHipertensaoPropria) {
+    avisos.push(
+      "Você tem histórico familiar de doença cardiovascular. Vale manter atenção a fatores de risco modificáveis " +
+        "(alimentação, atividade física, tabagismo) e conversar sobre isso na sua próxima consulta médica."
+    );
+  }
+  if (familia.has("Obesidade") && !["Sobrepeso", "Obesidade grau I", "Obesidade grau II", "Obesidade grau III"].includes(classificacaoImc)) {
+    avisos.push(
+      "Você tem histórico familiar de obesidade. Seu IMC atual está numa faixa saudável — manter os hábitos que já " +
+        "vêm funcionando é a melhor forma de prevenção nesse caso."
+    );
+  }
+
+  return avisos;
+}
+
+/**
+ * Rotina de trabalho/estudos em texto livre (rotina_trabalho). Escaneia por
+ * termos que indicam turno noturno/irregular — associado a maior risco de
+ * síndrome metabólica e a comer fora de um padrão regular. Mesma técnica de
+ * varredura de texto livre já usada em identificarCondicaoClinicaComplexa.
+ */
+const TERMOS_TURNO_IRREGULAR = ["noturno", "turno", "madrugada", "plantao", "escala", "revezamento"];
+
+export function avaliarRotinaTrabalho(rotinaTrabalho: string | null | undefined): string[] {
+  if (!rotinaTrabalho) return [];
+  const normalizado = normalizar(rotinaTrabalho);
+  if (TERMOS_TURNO_IRREGULAR.some((termo) => normalizado.includes(termo))) {
+    return [
+      "Sua rotina de trabalho parece incluir turno noturno ou horários irregulares. Isso está associado a maior " +
+        "risco metabólico e a comer fora de um padrão regular — tente manter horários de refeição o mais fixos " +
+        "possível dentro da sua escala, mesmo que não sejam os horários 'convencionais'.",
+    ];
+  }
+  return [];
+}
+
+/**
+ * Velocidade de mastigação (mastigacao). Comer rápido está associado a
+ * praticamente o dobro do risco de obesidade em estudos populacionais;
+ * mastigar mais reduz o tamanho da refeição de forma natural.
+ */
+export function avaliarMastigacao(mastigacao: string | null | undefined): string[] {
+  if (mastigacao === "Rápida demais, sempre termino primeiro.") {
+    return [
+      "Você relatou que come rápido. Comer mais devagar e mastigar mais está associado a comer menos naturalmente " +
+        "(o cérebro leva de 15 a 20 minutos para registrar saciedade) — tentar pausar entre garfadas pode ajudar " +
+        "sem precisar mudar o que você come.",
+    ];
+  }
+  return [];
+}
+
+/**
+ * Frequência de restaurante/bar/delivery (frequencia_restaurante). Comer
+ * fora com frequência está associado a mais sódio, gordura saturada e
+ * calorias, e menos fibra/micronutrientes — mesmo sem mudar o que a pessoa
+ * escolhe pedir.
+ */
+export function avaliarFrequenciaRestaurante(frequenciaRestaurante: string | null | undefined): string[] {
+  if (frequenciaRestaurante === "3 a 4 vezes por semana" || frequenciaRestaurante === "Sempre") {
+    return [
+      "Você relatou comer fora (restaurante/bar/delivery) com bastante frequência. Refeições fora de casa tendem a " +
+        "ter mais sódio, gordura e calorias, e menos fibra — não precisa cortar totalmente, mas escolher com mais " +
+        "atenção nesses dias (ex: priorizar grelhados, salada, evitar refrigerante) já ajuda bastante.",
+    ];
+  }
+  return [];
+}
+
+/**
  * Consumo de álcool informado na consulta. Não existe nível seguro
  * estabelecido para gestação/amamentação (evitar completamente); fora
  * disso, só avisamos em consumo moderado/frequente, e reforçamos riscos
@@ -495,6 +689,33 @@ export function avaliarConsumoAlcool(
     avisos.push("Consumo frequente de álcool pode elevar sua pressão arterial — vale moderar e acompanhar.");
   }
   return avisos;
+}
+
+/**
+ * Redução de danos para quem bebe com frequência e tem objetivo de
+ * emagrecimento, mas não sinaliza intenção de parar/reduzir. Deliberadamente
+ * NÃO recomenda "trocar para destilado" — álcool puro tem 7kcal/g não
+ * importa a bebida, destilado só concentra mais calorias por volume (as
+ * pessoas bebem menos volume, não é a bebida em si que é "mais leve"). As
+ * dicas abaixo miram no que a literatura de redução de danos realmente
+ * aponta como evitável sem exigir parar de beber: açúcar de misturadores/
+ * coquetéis doces, e o hábito de combinar álcool com petisco salgado. O
+ * aviso principal (reduzir ajuda mais) sempre vem junto, nunca sozinho.
+ */
+export function avaliarAlcoolReducaoDeDanos(
+  consumo: ConsumoAlcool,
+  objetivo: ObjetivoNutricional
+): string[] {
+  if (objetivo !== "emagrecimento") return [];
+  if (consumo !== "moderado" && consumo !== "frequente") return [];
+
+  return [
+    "Reduzir a frequência do álcool é o que mais ajuda no emagrecimento — o álcool pausa a queima de gordura do " +
+      "corpo por várias horas depois de beber. Se for continuar bebendo, algumas escolhas reduzem o impacto: " +
+      "evite misturadores açucarados e coquetéis doces (aí sim entra bastante caloria extra), prefira vinho seco ou " +
+      "destilado com água com gás/tônica zero, e evite combinar com petiscos salgados. O que mais pesa continua " +
+      "sendo a quantidade total, não o tipo de bebida.",
+  ];
 }
 
 /**
@@ -689,10 +910,19 @@ function montarResumoConsulta(params: {
   avisosGestacaoCondicao: string[];
   avisosObjetivoRisco: string[];
   avisosAlcool: string[];
+  avisosAlcoolReducaoDeDanos: string[];
   avisosTabagismo: string[];
   avisosSono: string[];
+  avisosSonoDuracao: string[];
   avisosDieta: string[];
   avisosMedicamentos: string[];
+  avisosAtividade: string[];
+  avisosHidratacao: string[];
+  avisosHistoricoDietas: string[];
+  avisosRiscoFamiliar: string[];
+  avisosRotinaTrabalho: string[];
+  avisosMastigacao: string[];
+  avisosFrequenciaRestaurante: string[];
   observacoesPaciente?: string | null;
 }): string {
   const paragrafos: string[] = [];
@@ -719,17 +949,33 @@ function montarResumoConsulta(params: {
     ...params.avisosGestacaoCondicao,
     ...params.avisosCondicoes,
     ...params.avisosObjetivoRisco,
+    ...params.avisosRiscoFamiliar,
   ];
   if (blocoCondicoes.length > 0) {
     paragrafos.push(`Sobre suas condições de saúde: ${blocoCondicoes.join(" ")}`);
   }
 
-  const blocoHabitos = [...params.avisosAlcool, ...params.avisosTabagismo, ...params.avisosSono];
+  const blocoHabitos = [
+    ...params.avisosAlcool,
+    ...params.avisosAlcoolReducaoDeDanos,
+    ...params.avisosTabagismo,
+    ...params.avisosSono,
+    ...params.avisosSonoDuracao,
+    ...params.avisosAtividade,
+    ...params.avisosRotinaTrabalho,
+    ...params.avisosHidratacao,
+  ];
   if (blocoHabitos.length > 0) {
     paragrafos.push(`Sobre seus hábitos: ${blocoHabitos.join(" ")}`);
   }
 
-  const blocoAlimentacao = [...params.avisosDieta, ...params.avisosMedicamentos];
+  const blocoAlimentacao = [
+    ...params.avisosDieta,
+    ...params.avisosMedicamentos,
+    ...params.avisosHistoricoDietas,
+    ...params.avisosMastigacao,
+    ...params.avisosFrequenciaRestaurante,
+  ];
   if (blocoAlimentacao.length > 0) {
     paragrafos.push(blocoAlimentacao.join(" "));
   }
@@ -794,6 +1040,13 @@ export function gerarResultadoAvaliacao(
     historicoCirurgias?: string | null;
     perdaPesoNaoIntencional?: string | null;
     ganhoPesoNaoIntencional?: string | null;
+    horasSono?: string | null;
+    ingestaoAguaCopos?: string | null;
+    dietaAnterior?: string | null;
+    doencasFamiliares?: string[];
+    rotinaTrabalho?: string | null;
+    mastigacao?: string | null;
+    frequenciaRestaurante?: string | null;
   } & CondicaoEspecial
 ): ResultadoAvaliacao {
   const imc = calcularIMC(dados);
@@ -811,6 +1064,8 @@ export function gerarResultadoAvaliacao(
     lactante: dados.lactante,
     historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
     imcAbaixoDoPesoComObjetivoEmagrecimento: imc < 18.5 && dados.objetivo === "emagrecimento",
+    // Escaneia tanto "outra condição" quanto o relato de cirurgias — os dois
+    // são texto livre onde uma cirurgia bariátrica, por exemplo, pode aparecer.
     condicaoClinicaComplexa: identificarCondicaoClinicaComplexa(
       [dados.condicoesSaudeOutras, dados.historicoCirurgias].filter(Boolean).join(" ")
     ),
@@ -844,18 +1099,39 @@ export function gerarResultadoAvaliacao(
   const avisosTabagismo = avaliarTabagismo(dados.tabagismo ?? "nunca", dados.condicoesSaude ?? []);
   const avisosMudancaPeso = avaliarMudancaPesoNaoIntencional(dados.perdaPesoNaoIntencional, dados.ganhoPesoNaoIntencional);
 
+  // Novos cruzamentos (campos antes coletados e nunca usados) — ver
+  // pesquisa/plano compartilhado com a nutricionista antes de implementar.
+  const avisosAlcoolReducaoDeDanos = avaliarAlcoolReducaoDeDanos(dados.consumoAlcool ?? "nunca", dados.objetivo);
+  const avisosAtividade = avaliarAtividadeVsObjetivo(dados.nivelAtividade, dados.objetivo);
+  const avisosSonoDuracao = avaliarSonoDuracao(dados.horasSono);
+  const avisosHidratacao = avaliarHidratacaoReal(dados.ingestaoAguaCopos, aguaMl);
+  const avisosHistoricoDietas = avaliarHistoricoDietas(dados.dietaAnterior);
+  const avisosRiscoFamiliar = avaliarRiscoFamiliar(dados.doencasFamiliares ?? [], dados.condicoesSaude ?? [], classificacaoImc);
+  const avisosRotinaTrabalho = avaliarRotinaTrabalho(dados.rotinaTrabalho);
+  const avisosMastigacao = avaliarMastigacao(dados.mastigacao);
+  const avisosFrequenciaRestaurante = avaliarFrequenciaRestaurante(dados.frequenciaRestaurante);
+
   const avisos = [
     avisoMetaPeso,
     avisoSeguranca,
     ...avisosMudancaPeso,
     ...avisosGestacaoCondicao,
     ...avisosCondicoes,
+    ...avisosRiscoFamiliar,
     ...avisosAlcool,
+    ...avisosAlcoolReducaoDeDanos,
     ...avisosTabagismo,
     ...avisosSono,
+    ...avisosSonoDuracao,
+    ...avisosAtividade,
+    ...avisosRotinaTrabalho,
+    ...avisosHidratacao,
     ...avisosDieta,
     ...avisosObjetivoRisco,
     ...avisosMedicamentos,
+    ...avisosHistoricoDietas,
+    ...avisosMastigacao,
+    ...avisosFrequenciaRestaurante,
   ].filter((a): a is string => Boolean(a));
 
   const resumo = montarResumoConsulta({
@@ -870,10 +1146,19 @@ export function gerarResultadoAvaliacao(
     avisosGestacaoCondicao,
     avisosObjetivoRisco,
     avisosAlcool,
+    avisosAlcoolReducaoDeDanos,
     avisosTabagismo,
     avisosSono,
+    avisosSonoDuracao,
     avisosDieta,
     avisosMedicamentos,
+    avisosAtividade,
+    avisosHidratacao,
+    avisosHistoricoDietas,
+    avisosRiscoFamiliar,
+    avisosRotinaTrabalho,
+    avisosMastigacao,
+    avisosFrequenciaRestaurante,
     observacoesPaciente: dados.observacoesPaciente,
   });
 

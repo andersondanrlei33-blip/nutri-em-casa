@@ -145,7 +145,7 @@ export function AcoesReceita({ receita, usuarioId }: { receita: Receita; usuario
                     Comi isso só hoje
                   </Button>
                   <Button variante="secundaria" onClick={trocarParaSempre} disabled={carregando}>
-                    Trocar essa refeição pra sempre
+                    Trocar essa refeição no plano
                   </Button>
                 </div>
               </>

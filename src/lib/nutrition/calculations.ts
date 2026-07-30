@@ -408,4 +408,491 @@ export function avaliarDietaRestritiva(restricoesAlimentares: string[]): string[
   }
   if (eVegetariano) {
     return [
-      "Como sua dieta é
+      "Como sua dieta é vegetariana, dê atenção especial a ferro, cálcio e vitamina B12 (principalmente se não " +
+        "consumir ovos e laticínios com regularidade) — combinar fontes vegetais de ferro com vitamina C ajuda na absorção.",
+    ];
+  }
+  return [];
+}
+
+/**
+ * Quando o paciente está com obesidade (IMC >= 30) e tem uma condição
+ * cardiometabólica (hipertensão, colesterol alto ou diabetes), mas NÃO
+ * escolheu "emagrecimento" como objetivo, um nutricionista normalmente
+ * comentaria isso na consulta — mesmo pequenas perdas de peso (5-10%)
+ * costumam melhorar bastante esses quadros. Isso é só uma sugestão em
+ * texto: nunca força déficit calórico nem substitui o objetivo escolhido
+ * pelo paciente (gestante/lactante/TA já são tratadas à parte e não entram aqui).
+ */
+export function avaliarObjetivoVsRiscoCardiometabolico(
+  imc: number,
+  objetivo: ObjetivoNutricional,
+  condicoes: CondicaoSaude[],
+  condicaoEspecial: CondicaoEspecial = {}
+): string[] {
+  const condicoesCardiometabolicas: CondicaoSaude[] = [
+    "hipertensao",
+    "colesterol_alto",
+    "diabetes_tipo1",
+    "diabetes_tipo2",
+  ];
+  const temCondicaoRelevante = condicoes.some((c) => condicoesCardiometabolicas.includes(c));
+  const { gestante, lactante, historicoTranstornoAlimentar } = condicaoEspecial;
+
+  if (
+    imc >= 30 &&
+    objetivo !== "emagrecimento" &&
+    temCondicaoRelevante &&
+    !gestante &&
+    !lactante &&
+    !historicoTranstornoAlimentar
+  ) {
+    return [
+      "Seu IMC está na faixa de obesidade e você informou uma condição associada a isso (hipertensão, colesterol " +
+        "alto ou diabetes). Mesmo que seu objetivo atual não seja emagrecimento, vale conversar com um nutricionista " +
+        "sobre uma perda de peso moderada — costuma melhorar bastante esses quadros.",
+    ];
+  }
+  return [];
+}
+
+/**
+ * Consumo de álcool informado na consulta. Não existe nível seguro
+ * estabelecido para gestação/amamentação (evitar completamente); fora
+ * disso, só avisamos em consumo moderado/frequente, e reforçamos riscos
+ * específicos quando há diabetes (hipoglicemia, principalmente com
+ * insulina/hipoglicemiantes) ou hipertensão (eleva a pressão).
+ */
+export function avaliarConsumoAlcool(
+  consumo: ConsumoAlcool,
+  condicoes: CondicaoSaude[],
+  gestante: boolean,
+  lactante: boolean
+): string[] {
+  if (consumo === "nunca") return [];
+
+  if (gestante || lactante) {
+    return [
+      "Não existe nível seguro de consumo de álcool comprovado durante a gravidez ou amamentação — o ideal é " +
+        "evitar completamente. Se estiver difícil, vale conversar com seu médico sobre apoio para isso.",
+    ];
+  }
+
+  const avisos: string[] = [];
+  if (consumo === "moderado" || consumo === "frequente") {
+    avisos.push(
+      "Álcool tem calorias que não entram no cálculo do seu plano alimentar — quanto mais frequente o consumo, " +
+        "mais isso pode atrapalhar seu objetivo."
+    );
+  }
+  if (consumo === "frequente" && (condicoes.includes("diabetes_tipo1") || condicoes.includes("diabetes_tipo2"))) {
+    avisos.push(
+      "Álcool combinado com diabetes — principalmente se você usa insulina ou outros medicamentos que baixam a " +
+        "glicemia — pode causar hipoglicemia. Vale conversar com seu médico sobre isso."
+    );
+  }
+  if (consumo === "frequente" && condicoes.includes("hipertensao")) {
+    avisos.push("Consumo frequente de álcool pode elevar sua pressão arterial — vale moderar e acompanhar.");
+  }
+  return avisos;
+}
+
+/**
+ * Tabagismo atual aumenta o consumo de vitamina C pelo estresse oxidativo
+ * do cigarro, e combinado com uma condição cardiometabólica (hipertensão,
+ * colesterol alto, diabetes) multiplica bastante o risco cardiovascular —
+ * geralmente mais do que qualquer ajuste isolado na dieta resolveria.
+ * Ex-fumante e nunca fumou não geram aviso.
+ */
+export function avaliarTabagismo(status: StatusTabagismo, condicoes: CondicaoSaude[]): string[] {
+  if (status !== "fumante") return [];
+
+  const avisos: string[] = [
+    "Fumar aumenta a necessidade de vitamina C pelo estresse oxidativo do cigarro — priorize frutas cítricas, " +
+      "acerola, goiaba e vegetais crus no seu dia a dia.",
+  ];
+
+  const condicoesCardiometabolicas: CondicaoSaude[] = [
+    "hipertensao",
+    "colesterol_alto",
+    "diabetes_tipo1",
+    "diabetes_tipo2",
+  ];
+  if (condicoes.some((c) => condicoesCardiometabolicas.includes(c))) {
+    avisos.push(
+      "Fumar combinado com uma condição cardiometabólica (hipertensão, colesterol alto ou diabetes) multiplica " +
+        "bastante o risco cardiovascular — buscar apoio pra parar de fumar teria mais impacto na sua saúde do que " +
+        "qualquer ajuste na dieta."
+    );
+  }
+  return avisos;
+}
+
+/**
+ * Disclaimer genérico para medicamentos em uso. Deliberadamente NÃO
+ * tentamos cruzar medicamento x alimento aqui (ex: varfarina e vitamina K,
+ * IMAO e tiramina) — é uma área de alto risco pra acertar com uma lista de
+ * texto livre, então preferimos reforçar que isso deve ser checado com um
+ * profissional em vez de arriscar uma regra automática errada.
+ */
+export function avaliarMedicamentos(medicamentosEmUso: string[]): string[] {
+  if (medicamentosEmUso.length === 0) return [];
+  return [
+    "Você informou medicamentos em uso. Alguns medicamentos interagem com alimentos ou nutrientes específicos " +
+      "(ex: anticoagulantes e vitamina K) — confirme com seu médico ou farmacêutico se algum dos seus tem alguma " +
+      "interação relevante com a alimentação.",
+  ];
+}
+
+/**
+ * Gestação/amamentação combinada com uma condição crônica (ex: diabetes,
+ * hipertensão) pede acompanhamento mais próximo do que o normal — inclusive
+ * porque algumas condições mudam de comportamento nessa fase (diabetes
+ * gestacional, por exemplo, não está na nossa lista fechada de condições e
+ * precisa de avaliação médica específica que este app não cobre).
+ */
+export function avaliarGestacaoComCondicao(
+  gestante: boolean,
+  lactante: boolean,
+  condicoes: CondicaoSaude[]
+): string[] {
+  if ((!gestante && !lactante) || condicoes.length === 0) return [];
+  const fase = gestante ? "gravidez" : "amamentação";
+  return [
+    `Ter uma condição de saúde crônica durante a ${fase} pede acompanhamento médico/nutricional mais próximo do ` +
+      "que o normal — algumas condições (como diabetes) mudam de comportamento nessa fase e precisam de avaliação " +
+      "específica que este app não substitui. Priorize consultas presenciais nesse período.",
+  ];
+}
+
+/**
+ * Relação cintura-quadril (RCQ) — indicador clássico de risco cardiovascular
+ * quando as duas medidas estão disponíveis. Referências de corte (OMS):
+ * mulher ≥0.85 e homem ≥0.90 já indicam risco aumentado.
+ */
+export function calcularRCQ(
+  cinturaCm: number,
+  quadrilCm: number,
+  genero: Genero
+): { valor: number; classificacao: string } {
+  const valor = arredondar(cinturaCm / quadrilCm, 2);
+
+  if (genero === "masculino") {
+    return { valor, classificacao: valor >= 0.9 ? "Risco aumentado" : "Risco baixo" };
+  }
+  if (genero === "feminino") {
+    return { valor, classificacao: valor >= 0.85 ? "Risco aumentado" : "Risco baixo" };
+  }
+  // Sem um corte padronizado para "outro" — mostramos o número com um corte
+  // conservador (média dos dois) em vez de inventar uma referência específica.
+  return { valor, classificacao: valor >= 0.875 ? "Risco possivelmente aumentado" : "Risco baixo" };
+}
+
+export interface MetaPesoResultado {
+  /** Meta de peso final, já validada — null se a meta informada foi
+   *  bloqueada por segurança ou se nenhuma meta foi informada. */
+  pesoMetaKg: number | null;
+  /** Aviso proeminente de segurança quando a meta é bloqueada — deve ser
+   *  mostrado com destaque (não como nota de rodapé), tanto no preview ao
+   *  vivo da consulta quanto no resultado final. Null quando não há bloqueio. */
+  avisoMetaPeso: string | null;
+}
+
+/**
+ * Trava de segurança pra meta de peso (peso_meta_kg). Quando o IMC atual já
+ * está classificado como "Abaixo do peso" OU a pessoa informou histórico de
+ * transtorno alimentar, uma meta que implica perder ainda mais peso
+ * (peso_meta_kg < peso_kg) nunca é aceita — zeramos a meta antes de gerar
+ * qualquer resultado e mostramos um aviso proeminente recomendando avaliação
+ * presencial. Uma meta de ganho de peso (>= peso atual) nessas mesmas
+ * condições não é bloqueada, já que não representa o mesmo risco.
+ */
+export function avaliarSegurancaMetaPeso(
+  pesoMetaKg: number | null | undefined,
+  pesoKg: number,
+  classificacaoImc: string,
+  historicoTranstornoAlimentar: boolean
+): MetaPesoResultado {
+  if (pesoMetaKg == null) return { pesoMetaKg: null, avisoMetaPeso: null };
+
+  const imcAbaixoDoPeso = classificacaoImc === "Abaixo do peso";
+  const emRisco = imcAbaixoDoPeso || historicoTranstornoAlimentar;
+  const metaImplicaPerderMais = pesoMetaKg < pesoKg;
+
+  if (emRisco && metaImplicaPerderMais) {
+    const motivo =
+      imcAbaixoDoPeso && historicoTranstornoAlimentar
+        ? "seu IMC atual já está abaixo do peso e você informou histórico de transtorno alimentar"
+        : imcAbaixoDoPeso
+          ? "seu IMC atual já está abaixo do peso"
+          : "você informou histórico de transtorno alimentar";
+    return {
+      pesoMetaKg: null,
+      avisoMetaPeso:
+        `Não aplicamos a meta de ${pesoMetaKg}kg que você informou porque ${motivo} — perder ainda mais peso não ` +
+        "seria seguro. Essa não é uma decisão que este app deveria tomar sozinho: por favor, converse com um " +
+        "nutricionista ou médico presencialmente antes de buscar perder peso. Seguimos sem meta de peso definida " +
+        "até você reavaliar isso com um profissional.",
+    };
+  }
+
+  return { pesoMetaKg, avisoMetaPeso: null };
+}
+
+export interface ResultadoAvaliacao {
+  imc: number;
+  classificacaoImc: string;
+  tmb: number;
+  tdee: number;
+  metaCalorica: number;
+  macros: Macros;
+  aguaMl: number;
+  /** Todos os avisos/recomendações da consulta: segurança calórica, condições
+   *  de saúde informadas, sono/estresse e dieta restritiva — nessa ordem de prioridade. */
+  avisos: string[];
+  /** Os mesmos avisos acima, reorganizados em texto corrido por tema (visão
+   *  geral, condições de saúde, hábitos, alimentação) — pra soar como um
+   *  nutricionista fechando a consulta, não uma lista de alertas de sistema.
+   *  100% determinístico: reaproveita as mesmas frases já testadas, sem IA. */
+  resumo: string;
+  /** Meta de peso final, já validada pela trava de segurança — null se
+   *  nenhuma meta foi informada ou se a meta foi bloqueada (ver avisoMetaPeso). */
+  pesoMetaKg: number | null;
+  /** Aviso proeminente quando a meta de peso informada foi bloqueada por
+   *  segurança — null quando não há bloqueio. Ver avaliarSegurancaMetaPeso. */
+  avisoMetaPeso: string | null;
+}
+
+const OBJETIVO_TEXTO: Record<ObjetivoNutricional, string> = {
+  emagrecimento: "emagrecer",
+  manutencao: "manter seu peso atual",
+  ganho_massa: "ganhar massa muscular",
+  saude_geral: "cuidar da sua saúde de forma geral",
+  performance_esportiva: "melhorar sua performance esportiva",
+};
+
+/**
+ * Monta o resumo em texto corrido descrito acima. Determinístico: junta as
+ * mesmas frases já geradas pelas funções avaliar... e identificar... (já cobertas
+ * por teste individualmente) em blocos por tema, em vez de reescrever tudo
+ * do zero — assim nunca perde nem distorce um dado de segurança.
+ */
+function montarResumoConsulta(params: {
+  imc: number;
+  classificacaoImc: string;
+  metaCalorica: number;
+  objetivo: ObjetivoNutricional;
+  avisoSeguranca: string | null;
+  avisoMetaPeso: string | null;
+  avisosMudancaPeso: string[];
+  avisosCondicoes: string[];
+  avisosGestacaoCondicao: string[];
+  avisosObjetivoRisco: string[];
+  avisosAlcool: string[];
+  avisosTabagismo: string[];
+  avisosSono: string[];
+  avisosDieta: string[];
+  avisosMedicamentos: string[];
+  observacoesPaciente?: string | null;
+}): string {
+  const paragrafos: string[] = [];
+
+  const objetivoTexto = OBJETIVO_TEXTO[params.objetivo];
+  const abertura =
+    `Com base no que você me contou, seu IMC está em ${params.imc} (${params.classificacaoImc.toLowerCase()}) ` +
+    `e vamos trabalhar com foco em ${objetivoTexto}.`;
+  paragrafos.push(
+    params.avisoSeguranca
+      ? `${abertura} ${params.avisoSeguranca}`
+      : `${abertura} Sua meta calórica diária ficou em ${params.metaCalorica} kcal.`
+  );
+
+  if (params.avisoMetaPeso) {
+    paragrafos.push(`⚠️ Sobre a meta de peso que você informou: ${params.avisoMetaPeso}`);
+  }
+
+  if (params.avisosMudancaPeso.length > 0) {
+    paragrafos.push(`⚠️ ${params.avisosMudancaPeso.join(" ")}`);
+  }
+
+  const blocoCondicoes = [
+    ...params.avisosGestacaoCondicao,
+    ...params.avisosCondicoes,
+    ...params.avisosObjetivoRisco,
+  ];
+  if (blocoCondicoes.length > 0) {
+    paragrafos.push(`Sobre suas condições de saúde: ${blocoCondicoes.join(" ")}`);
+  }
+
+  const blocoHabitos = [...params.avisosAlcool, ...params.avisosTabagismo, ...params.avisosSono];
+  if (blocoHabitos.length > 0) {
+    paragrafos.push(`Sobre seus hábitos: ${blocoHabitos.join(" ")}`);
+  }
+
+  const blocoAlimentacao = [...params.avisosDieta, ...params.avisosMedicamentos];
+  if (blocoAlimentacao.length > 0) {
+    paragrafos.push(blocoAlimentacao.join(" "));
+  }
+
+  if (params.observacoesPaciente?.trim()) {
+    paragrafos.push(
+      `Você também comentou: "${params.observacoesPaciente.trim()}" — vou levar isso em conta no seu plano.`
+    );
+  }
+
+  paragrafos.push(
+    "O plano alimentar já foi montado em cima dessas metas — qualquer dúvida ou mudança, é só voltar numa consulta de retorno."
+  );
+
+  return paragrafos.join("\n\n");
+}
+
+/**
+ * Perda ou ganho de peso recente e NÃO intencional são sinais que um
+ * nutricionista sempre investiga — podem ter causas que vão de estresse e
+ * rotina até condições médicas que precisam de avaliação. Isso nunca é
+ * ignorado só porque a pessoa não marcou nenhuma condição de saúde específica
+ * em outra parte da consulta.
+ */
+export function avaliarMudancaPesoNaoIntencional(
+  perdaPesoNaoIntencional: string | null | undefined,
+  ganhoPesoNaoIntencional: string | null | undefined
+): string[] {
+  const avisos: string[] = [];
+  if (perdaPesoNaoIntencional && perdaPesoNaoIntencional.trim()) {
+    avisos.push(
+      "Você relatou perda de peso recente e não intencional. Isso é algo que vale investigar com um médico ou " +
+        "nutricionista presencialmente — perder peso sem estar buscando isso pode ter várias causas e merece uma " +
+        "avaliação, independente do que mais apareceu nesta consulta."
+    );
+  }
+  if (ganhoPesoNaoIntencional && ganhoPesoNaoIntencional.trim()) {
+    avisos.push(
+      "Você relatou ganho de peso recente e não intencional. Vale comentar isso com um médico ou nutricionista " +
+        "presencialmente, principalmente se não conseguir associar a uma mudança clara de rotina ou alimentação."
+    );
+  }
+  return avisos;
+}
+
+/** Executa a bateria completa de cálculos a partir dos dados da consulta. */
+export function gerarResultadoAvaliacao(
+  dados: DadosAntropometricos & {
+    nivelAtividade: NivelAtividade;
+    objetivo: ObjetivoNutricional;
+    condicoesSaude?: CondicaoSaude[];
+    qualidadeSono?: number | null;
+    nivelEstresse?: number | null;
+    restricoesAlimentares?: string[];
+    consumoAlcool?: ConsumoAlcool;
+    medicamentosEmUso?: string[];
+    condicoesSaudeOutras?: string | null;
+    tabagismo?: StatusTabagismo;
+    observacoesPaciente?: string | null;
+    pesoMetaKg?: number | null;
+    insonia?: boolean;
+    historicoCirurgias?: string | null;
+    perdaPesoNaoIntencional?: string | null;
+    ganhoPesoNaoIntencional?: string | null;
+  } & CondicaoEspecial
+): ResultadoAvaliacao {
+  const imc = calcularIMC(dados);
+  const classificacaoImc = classificarIMC(imc);
+  const { pesoMetaKg: pesoMetaSeguro, avisoMetaPeso } = avaliarSegurancaMetaPeso(
+    dados.pesoMetaKg,
+    dados.pesoKg,
+    classificacaoImc,
+    dados.historicoTranstornoAlimentar ?? false
+  );
+  const tmb = calcularTMB(dados);
+  const tdee = calcularTDEE(tmb, dados.nivelAtividade);
+  const { valor: metaCalorica, avisoSeguranca } = calcularMetaCalorica(tdee, dados.objetivo, dados.genero, {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
+    imcAbaixoDoPesoComObjetivoEmagrecimento: imc < 18.5 && dados.objetivo === "emagrecimento",
+    condicaoClinicaComplexa: identificarCondicaoClinicaComplexa(
+      [dados.condicoesSaudeOutras, dados.historicoCirurgias].filter(Boolean).join(" ")
+    ),
+  });
+
+  const { avisos: avisosCondicoes, limiteProteinaPorKg } = avaliarCondicoesSaude(dados.condicoesSaude ?? []);
+  const macros = calcularMacros(metaCalorica, dados.pesoKg, dados.objetivo, limiteProteinaPorKg);
+  const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade, {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+  });
+  const avisosSono = avaliarSonoEEstresse(dados.qualidadeSono ?? null, dados.nivelEstresse ?? null, dados.insonia ?? false);
+  const avisosDieta = avaliarDietaRestritiva(dados.restricoesAlimentares ?? []);
+  const avisosObjetivoRisco = avaliarObjetivoVsRiscoCardiometabolico(imc, dados.objetivo, dados.condicoesSaude ?? [], {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
+  });
+  const avisosAlcool = avaliarConsumoAlcool(
+    dados.consumoAlcool ?? "nunca",
+    dados.condicoesSaude ?? [],
+    dados.gestante ?? false,
+    dados.lactante ?? false
+  );
+  const avisosGestacaoCondicao = avaliarGestacaoComCondicao(
+    dados.gestante ?? false,
+    dados.lactante ?? false,
+    dados.condicoesSaude ?? []
+  );
+  const avisosMedicamentos = avaliarMedicamentos(dados.medicamentosEmUso ?? []);
+  const avisosTabagismo = avaliarTabagismo(dados.tabagismo ?? "nunca", dados.condicoesSaude ?? []);
+  const avisosMudancaPeso = avaliarMudancaPesoNaoIntencional(dados.perdaPesoNaoIntencional, dados.ganhoPesoNaoIntencional);
+
+  const avisos = [
+    avisoMetaPeso,
+    avisoSeguranca,
+    ...avisosMudancaPeso,
+    ...avisosGestacaoCondicao,
+    ...avisosCondicoes,
+    ...avisosAlcool,
+    ...avisosTabagismo,
+    ...avisosSono,
+    ...avisosDieta,
+    ...avisosObjetivoRisco,
+    ...avisosMedicamentos,
+  ].filter((a): a is string => Boolean(a));
+
+  const resumo = montarResumoConsulta({
+    imc,
+    classificacaoImc,
+    metaCalorica,
+    objetivo: dados.objetivo,
+    avisoSeguranca,
+    avisoMetaPeso,
+    avisosMudancaPeso,
+    avisosCondicoes,
+    avisosGestacaoCondicao,
+    avisosObjetivoRisco,
+    avisosAlcool,
+    avisosTabagismo,
+    avisosSono,
+    avisosDieta,
+    avisosMedicamentos,
+    observacoesPaciente: dados.observacoesPaciente,
+  });
+
+  return {
+    imc,
+    classificacaoImc,
+    tmb,
+    tdee,
+    metaCalorica,
+    macros,
+    aguaMl,
+    avisos,
+    resumo,
+    pesoMetaKg: pesoMetaSeguro,
+    avisoMetaPeso,
+  };
+}
+
+function arredondar(valor: number, casas: number): number {
+  const fator = 10 ** casas;
+  return Math.round(valor * fator) / fator;
+}

@@ -10,24 +10,22 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { MealCard } from "@/components/plano/MealCard";
 import { MealForm, type DadosFormularioRefeicao } from "@/components/plano/MealForm";
 import { toast } from "@/components/ui/Toast";
-import { DIAS_SEMANA, DIAS_SEMANA_LABEL } from "@/lib/utils/date";
-import type { RefeicaoPlano, DiaSemana, Receita } from "@/types/domain";
-
-/** Dia da semana de hoje, no mesmo formato usado em dia_semana (segunda..domingo). */
-function diaSemanaHoje(): DiaSemana {
-  const indiceDiaJs = new Date().getDay(); // 0 = domingo
-  return DIAS_SEMANA[(indiceDiaJs + 6) % 7];
-}
+import { montarRegistroConsumo } from "@/lib/nutrition/registrarConsumo";
+import { DIAS_SEMANA, DIAS_SEMANA_LABEL, diaSemanaHoje, hojeISO } from "@/lib/utils/date";
+import type { RefeicaoPlano, DiaSemana, Receita, RegistroConsumo } from "@/types/domain";
 
 export default function PlanoPage() {
   const { user, carregando: carregandoUsuario } = useUser();
   const supabase = createClient();
   const [planoId, setPlanoId] = useState<string | null>(null);
   const [refeicoes, setRefeicoes] = useState<RefeicaoPlano[]>([]);
+  const [registrosHoje, setRegistrosHoje] = useState<RegistroConsumo[]>([]);
   const [receitas, setReceitas] = useState<Receita[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [diaSelecionado, setDiaSelecionado] = useState<DiaSemana>(diaSemanaHoje);
   const [modalAberto, setModalAberto] = useState<{ dia: DiaSemana; refeicao: RefeicaoPlano | null } | null>(null);
+
+  const diaHoje = diaSemanaHoje();
 
   useEffect(() => {
     if (!user) return;
@@ -52,23 +50,33 @@ export default function PlanoPage() {
     if (!plano) {
       setPlanoId(null);
       setRefeicoes([]);
+      setRegistrosHoje([]);
       setCarregando(false);
       return;
     }
     setPlanoId(plano.id);
-    const { data } = await supabase
-      .from("refeicoes_plano")
-      .select("*")
-      .eq("plano_id", plano.id)
-      .order("dia_semana", { ascending: true })
-      .order("ordem", { ascending: true });
-    setRefeicoes((data ?? []) as RefeicaoPlano[]);
+    const [{ data: refeicoesData }, { data: registrosData }] = await Promise.all([
+      supabase
+        .from("refeicoes_plano")
+        .select("*")
+        .eq("plano_id", plano.id)
+        .order("dia_semana", { ascending: true })
+        .order("ordem", { ascending: true }),
+      supabase.from("registros_consumo").select("*").eq("usuario_id", user.id).eq("data", hojeISO()),
+    ]);
+    setRefeicoes((refeicoesData ?? []) as RefeicaoPlano[]);
+    setRegistrosHoje((registrosData ?? []) as RegistroConsumo[]);
     setCarregando(false);
   }
 
   const refeicoesDoDia = useMemo(
     () => refeicoes.filter((r) => r.dia_semana === diaSelecionado),
     [refeicoes, diaSelecionado]
+  );
+
+  const registroPorRefeicaoId = useMemo(
+    () => new Map(registrosHoje.map((r) => [r.refeicao_plano_id, r])),
+    [registrosHoje]
   );
 
   async function salvarRefeicao(dados: DadosFormularioRefeicao) {
@@ -113,14 +121,40 @@ export default function PlanoPage() {
   }
 
   async function alternarConsumida(refeicao: RefeicaoPlano) {
+    if (!user || diaSelecionado !== diaHoje) return;
+    const hoje = hojeISO();
+    const jaConsumida = registroPorRefeicaoId.has(refeicao.id);
+
+    if (jaConsumida) {
+      const { error } = await supabase
+        .from("registros_consumo")
+        .delete()
+        .eq("usuario_id", user.id)
+        .eq("data", hoje)
+        .eq("refeicao_plano_id", refeicao.id);
+      if (error) return toast.erro("Erro ao atualizar refeição.");
+      setRegistrosHoje((prev) => prev.filter((r) => r.refeicao_plano_id !== refeicao.id));
+      return;
+    }
+
+    const receita = refeicao.receita_id ? receitas.find((r) => r.id === refeicao.receita_id) : undefined;
+    if (!receita) return toast.erro("Adicione uma receita a essa refeição antes de marcar como consumida.");
+
     const { data, error } = await supabase
-      .from("refeicoes_plano")
-      .update({ consumida: !refeicao.consumida })
-      .eq("id", refeicao.id)
+      .from("registros_consumo")
+      .upsert(
+        {
+          usuario_id: user.id,
+          data: hoje,
+          refeicao_plano_id: refeicao.id,
+          ...montarRegistroConsumo(receita, refeicao.quantidade_porcoes || 1),
+        },
+        { onConflict: "usuario_id,data,refeicao_plano_id" }
+      )
       .select()
       .single();
     if (error) return toast.erro("Erro ao atualizar refeição.");
-    setRefeicoes((prev) => prev.map((r) => (r.id === refeicao.id ? (data as RefeicaoPlano) : r)));
+    setRegistrosHoje((prev) => [...prev.filter((r) => r.refeicao_plano_id !== refeicao.id), data as RegistroConsumo]);
   }
 
   async function duplicarDia(diaOrigem: DiaSemana, diaDestino: DiaSemana) {
@@ -208,6 +242,8 @@ export default function PlanoPage() {
             <MealCard
               key={refeicao.id}
               refeicao={refeicao}
+              consumida={registroPorRefeicaoId.has(refeicao.id)}
+              podeAlternar={diaSelecionado === diaHoje}
               aoEditar={() => setModalAberto({ dia: diaSelecionado, refeicao })}
               aoExcluir={() => excluirRefeicao(refeicao.id)}
               aoDuplicar={() => duplicarRefeicao(refeicao)}

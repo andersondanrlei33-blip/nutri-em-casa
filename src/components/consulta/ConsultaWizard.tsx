@@ -170,4 +170,538 @@ const PERGUNTAS: Pergunta[] = [
     opcoes: ["Sedentário (pouco ou nenhum exercício)", "Leve (exercício 1-3x/semana)", "Moderado (exercício 3-5x/semana)", "Intenso (exercício 6-7x/semana)", "Atleta (muito intenso)"],
     mapa: { "Sedentário (pouco ou nenhum exercício)": "sedentario", "Leve (exercício 1-3x/semana)": "leve", "Moderado (exercício 3-5x/semana)": "moderado", "Intenso (exercício 6-7x/semana)": "intenso", "Atleta (muito intenso)": "atleta" } },
   { id: 10, campo: "horas_sono", texto: "Costuma dormir quantas horas por noite?", tipo: "single", obrigatoria: true, opcoes: ["< 4 horas", "4 a 6 horas", "6 a 8 horas", "> 8 horas"] },
-  { id: 11, campo:
+  { id: 11, campo: "qualidade_sono_categoria", texto: "Como você considera o seu sono?", tipo: "single", obrigatoria: true, opcoes: ["Bom", "Regular", "Ruim"] },
+  { id: 12, campo: "insonia", texto: "Tem insônia?", tipo: "single", obrigatoria: true, opcoes: ["Sim", "Não"], mapa: { Sim: true, "Não": false } },
+  { id: 13, campo: "medicacao_sono", texto: "Toma alguma medicação para dormir?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não", "Sim"], detalheObrigatorioSe: "Sim", detalhePlaceholder: "Qual medicação?" },
+  { id: 14, campo: "disposicao_manha", texto: "Como você classifica sua disposição física pela manhã?", tipo: "single", obrigatoria: true, opcoes: ["Boa", "Regular", "Ruim"] },
+  { id: 15, campo: "disposicao_tarde", texto: "Como você classifica sua disposição física pela tarde?", tipo: "single", obrigatoria: true, opcoes: ["Boa", "Regular", "Ruim"] },
+  { id: 16, campo: "disposicao_noite", texto: "Como você classifica sua disposição física pela noite?", tipo: "single", obrigatoria: true, opcoes: ["Boa", "Regular", "Ruim"] },
+  { id: 17, campo: "concentracao", texto: "Como é a sua concentração para atividades intelectuais?", tipo: "single", obrigatoria: true, opcoes: ["Boa", "Regular", "Ruim"] },
+  { id: 18, campo: "memoria_recente", texto: "Como você classifica a sua memória para fatos recentes?", tipo: "single", obrigatoria: true, opcoes: ["Boa", "Regular", "Ruim"] },
+  { id: 19, campo: "memoria_antiga", texto: "Como você classifica a sua memória para fatos antigos?", tipo: "single", obrigatoria: true, opcoes: ["Boa", "Regular", "Ruim"] },
+  { id: 20, campo: "nivel_estresse_categoria", texto: "Você se considera uma pessoa estressada?", tipo: "single", obrigatoria: true,
+    opcoes: ["Não, nada me afeta.", "Sim, estressado e muito cansado", "Sim, estressado e muito agitado", "Sim, estressado e cansado pela manhã e agitado pela noite"] },
+  { id: 21, campo: "rotina_trabalho", texto: "Como é a sua rotina de trabalho/estudos?", tipo: "text", obrigatoria: false, placeholder: "Sua resposta" },
+  { id: 22, campo: "doencas_familiares", texto: "Seus familiares têm ou já tiveram algumas das doenças abaixo:", hint: "Seleção múltipla", tipo: "multi", obrigatoria: true, opcoes: DOENCAS_FAMILIARES_OPCOES },
+  { id: 23, campo: "condicoes_saude", texto: "E você mesmo(a) — tem ou já teve alguma dessas condições de saúde?", hint: "Seleção múltipla", tipo: "multi", obrigatoria: true, opcoes: CONDICOES_SAUDE_OPCOES },
+  { id: 100, campo: "restricoes_alimentares", texto: "Você segue alguma dieta ou restrição alimentar específica?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não tenho nenhuma", "Sim, tenho"], detalheObrigatorioSe: "Sim, tenho", detalhePlaceholder: "Vegetariano, vegano, sem glúten, sem lactose..." },
+  { id: 24, campo: "historico_cirurgias", texto: "Já passou por algum tipo de cirurgia?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não", "Sim"], detalheObrigatorioSe: "Sim", detalhePlaceholder: "Qual cirurgia e quando?" },
+  { id: 25, campo: "alergias", texto: "Tem alergia ou intolerância alimentar?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não tenho nenhuma", "Sim, tenho"], detalheObrigatorioSe: "Sim, tenho", detalhePlaceholder: "Descreva qual(is) alimento(s) — ex: amendoim, lactose, frutos do mar..." },
+  { id: 26, campo: "medicamentos_em_uso", texto: "Faz uso de algum medicamento atualmente?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não", "Sim"], detalheObrigatorioSe: "Sim", detalhePlaceholder: "Quais medicamentos e em quais horários?" },
+  { id: 27, campo: "suplementos_em_uso", texto: "Faz uso de algum suplemento alimentar atualmente?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não", "Sim"], detalheObrigatorioSe: "Sim", detalhePlaceholder: "Quais suplementos?" },
+  { id: 28, campo: "dieta_anterior", texto: "Você já seguiu alguma dieta antes?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não", "Sim"], detalheObrigatorioSe: "Sim", detalhePlaceholder: "O que deu certo ou não deu certo?" },
+  { id: 29, campo: "ingestao_agua_copos", texto: "Quantos copos de água (~250ml) você bebe por dia, em média?", hint: "Ex: se você toma 1 garrafa de 510ml, conte como 2 copos.", tipo: "numero", obrigatoria: true },
+  { id: 30, campo: "quem_prepara_comida", texto: "Você costuma preparar a sua própria comida?", tipo: "single", obrigatoria: true, opcoes: ["Sim, eu mesmo(a) preparo", "Não, outra pessoa prepara"] },
+  { id: 31, campo: "refeicao_sozinho_ou_acompanhado", texto: "Você costuma comer sozinho ou acompanhado?", tipo: "single", obrigatoria: true, opcoes: ["Sozinho", "Acompanhado"] },
+  { id: 32, campo: "horario_mais_fome", texto: "Em qual horário você mais sente fome?", hint: "Seleção múltipla", tipo: "multi", obrigatoria: true, opcoes: ["Manhã", "Tarde", "Noite", "Madrugada"] },
+  { id: 33, campo: "mastigacao", texto: "Sobre sua mastigação, você a considera:", tipo: "single", obrigatoria: true,
+    opcoes: ["Lenta, sempre termino por último.", "Normal, aprecio a comida com atenção plena.", "Rápida demais, sempre termino primeiro."] },
+  { id: 34, campo: "alimento_favorito", texto: "Qual alimento você considera indispensável, seu favorito?", tipo: "text", obrigatoria: false, placeholder: "Sua resposta" },
+  { id: 35, campo: "alimento_rejeitado", texto: "Tem algum alimento que você não come de jeito nenhum?", tipo: "text", obrigatoria: false, placeholder: "Sua resposta" },
+  { id: 36, campo: "preferencia_sabor", texto: "Qual é a sua preferência alimentar?", hint: "Seleção múltipla", tipo: "multi", obrigatoria: true, opcoes: ["Doce", "Salgado", "Azedo", "Amargo"] },
+  { id: 37, campo: "frequencia_restaurante", texto: "Com que frequência você frequenta restaurantes / bares / delivery?", tipo: "single", obrigatoria: true,
+    opcoes: ["Não tenho esse costume", "1 a 2 vezes por semana", "3 a 4 vezes por semana", "Sempre"] },
+  { id: 38, campo: "historico_dietetico", texto: "Histórico dietético — conte sobre suas refeições por dia, o que costuma comer e as quantidades.", hint: "Ex: Almoço = 3 colheres de arroz + feijão + filé de tilápia + salada", tipo: "text", obrigatoria: true, placeholder: "Sua resposta" },
+  { id: 39, campo: "altura_cm", texto: "Altura", hint: "Selecione na lista", tipo: "dropdown", obrigatoria: true, opcoes: ALTURAS },
+  { id: 40, campo: "peso_kg", texto: "Peso atual", hint: "Selecione na lista", tipo: "dropdown", obrigatoria: true, opcoes: PESOS },
+  { id: 41, campo: "situacoes_especiais", texto: "Alguma dessas situações se aplica a você agora?", hint: "Seleção múltipla", tipo: "multi", obrigatoria: true, opcoes: SITUACOES_ESPECIAIS_OPCOES },
+  { id: 42, campo: "peso_meta_kg", texto: "Peso desejado (kg)", tipo: "numero", obrigatoria: false },
+  { id: 43, campo: "perda_peso_nao_intencional", texto: "Teve perda de peso recente e não intencional?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não", "Sim"], detalheObrigatorioSe: "Sim", detalhePlaceholder: "Quantos quilos e em quanto tempo?" },
+  { id: 44, campo: "ganho_peso_nao_intencional", texto: "Teve ganho de peso recente e não intencional?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não", "Sim"], detalheObrigatorioSe: "Sim", detalhePlaceholder: "Quantos quilos e em quanto tempo?" },
+  { id: 45, campo: "como_conheceu", texto: "Como você me conheceu?", tipo: "single", obrigatoria: false,
+    opcoes: ["Indicação de familiar/amigo", "Instagram", "Facebook", "Site", "Google", "Indicação de profissional da saúde"] },
+  { id: 46, campo: "observacoes", texto: "Algo mais que sua nutricionista virtual deveria saber?", tipo: "text", obrigatoria: false, placeholder: "Ex: trabalho por turnos, viajo bastante a trabalho, cozinho pouco durante a semana..." },
+];
+
+function paraLista(texto: string): string[] {
+  return texto.split(",").map((s) => s.trim()).filter(Boolean);
+}
+function numeroDaFaixa(valor: string): number {
+  return Number(valor.replace(/[^\d.]/g, ""));
+}
+
+/** Numa consulta de retorno, pré-preenche os campos que existem tanto na
+ *  avaliação anterior quanto no novo formulário — os campos novos (que o
+ *  questionário de 40 perguntas trouxe) começam em branco mesmo assim. */
+function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsulta {
+  const base = { ...INICIAL };
+  if (!anterior) return base;
+  return {
+    ...base,
+    idade: String(anterior.idade),
+    genero: anterior.genero,
+    objetivo: anterior.objetivo,
+    tabagismo: anterior.tabagismo ?? "",
+    consumo_alcool: anterior.consumo_alcool ?? "",
+    nivel_atividade: anterior.nivel_atividade,
+    condicoes_saude: anterior.condicoes_saude,
+    restricoes_alimentares: anterior.restricoes_alimentares.join(", "),
+    alergias: anterior.alergias.join(", "),
+    medicamentos_em_uso: anterior.medicamentos_em_uso.join(", "),
+    altura_cm: `${anterior.altura_cm} cm`,
+    peso_kg: `${anterior.peso_kg} kg`,
+    peso_meta_kg: anterior.peso_meta_kg != null ? String(anterior.peso_meta_kg) : "",
+    // Sinalizadores de segurança não carregam automaticamente — a situação
+    // pode ter mudado desde a última consulta, então perguntamos de novo.
+    situacoes_especiais: [],
+  };
+}
+
+export function ConsultaWizard({
+  avaliacaoAnterior,
+}: {
+  avaliacaoAnterior: AvaliacaoNutricional | null;
+}) {
+  const router = useRouter();
+  const retorno = Boolean(avaliacaoAnterior);
+  const [indice, setIndice] = useState(-1); // -1 = intro
+  const [respostas, setRespostas] = useState<RespostasConsulta>(() => estadoInicialDe(avaliacaoAnterior));
+  const [escolhas, setEscolhas] = useState<Record<number, string>>({});
+  const [enviando, setEnviando] = useState(false);
+  const [resultadoFinal, setResultadoFinal] = useState<null | {
+    observacoes: string;
+    avisos: string[];
+    resumo: string;
+    avisoMetaPeso: string | null;
+  }>(null);
+
+  const pergunta = indice >= 0 && indice < PERGUNTAS.length ? PERGUNTAS[indice] : null;
+
+  function set<K extends keyof RespostasConsulta>(campo: K, valor: RespostasConsulta[K]) {
+    setRespostas((prev) => ({ ...prev, [campo]: valor }));
+  }
+
+  const podeVerPreview =
+    Number(respostas.peso_kg && numeroDaFaixa(respostas.peso_kg)) > 0 &&
+    Number(respostas.altura_cm && numeroDaFaixa(respostas.altura_cm)) > 0 &&
+    Number(respostas.idade) > 0 &&
+    !!respostas.genero;
+
+  const preview = useMemo(() => {
+    if (!podeVerPreview) return null;
+    try {
+      return gerarResultadoAvaliacao({
+        pesoKg: numeroDaFaixa(respostas.peso_kg),
+        alturaCm: numeroDaFaixa(respostas.altura_cm),
+        idade: Number(respostas.idade),
+        genero: respostas.genero as Genero,
+        nivelAtividade: (respostas.nivel_atividade || "leve") as NivelAtividade,
+        objetivo: (respostas.objetivo || "manutencao") as ObjetivoNutricional,
+        gestante: respostas.situacoes_especiais.includes("Estou grávida"),
+        lactante: respostas.situacoes_especiais.includes("Estou amamentando"),
+        historicoTranstornoAlimentar: respostas.situacoes_especiais.includes("Tenho ou já tive transtorno alimentar"),
+        condicoesSaude: respostas.condicoes_saude.map((l) => CONDICOES_SAUDE_SLUGS[l]).filter(Boolean) as CondicaoSaude[],
+        restricoesAlimentares: paraLista(respostas.restricoes_alimentares),
+        pesoMetaKg: respostas.peso_meta_kg ? Number(respostas.peso_meta_kg) : null,
+      });
+    } catch {
+      return null;
+    }
+  }, [respostas, podeVerPreview]);
+
+  const diffPeso = useMemo(() => {
+    if (!avaliacaoAnterior || !respostas.peso_kg) return null;
+    const diferenca = numeroDaFaixa(respostas.peso_kg) - avaliacaoAnterior.peso_kg;
+    return Math.round(diferenca * 10) / 10;
+  }, [avaliacaoAnterior, respostas.peso_kg]);
+
+  function respondida(p: Pergunta): boolean {
+    const valor = respostas[p.campo];
+    if (p.tipo === "single_detail") {
+      const label = escolhas[p.id];
+      if (!p.obrigatoria) return true;
+      if (!label) return false;
+      if (label === p.detalheObrigatorioSe) return typeof valor === "string" && valor.trim().length > 0;
+      return true;
+    }
+    if (!p.obrigatoria) return true;
+    if (p.tipo === "multi") return Array.isArray(valor) && valor.length > 0;
+    if (p.tipo === "single" || p.tipo === "dropdown") return !!escolhas[p.id];
+    if (p.tipo === "numero") return valor !== "" && valor !== null && Number(valor) > 0;
+    return typeof valor === "string" && valor.trim().length > 0;
+  }
+
+  function validarPerguntaAtual(): string | null {
+    if (!pergunta) return null;
+    if (pergunta.campo === "idade" && respostas.idade && Number(respostas.idade) < 18) {
+      return "O Nutri em Casa é destinado a maiores de 18 anos. Menores de idade devem buscar acompanhamento nutricional presencial com um profissional especializado.";
+    }
+    if (!respondida(pergunta)) {
+      return pergunta.tipo === "multi" ? "Selecione ao menos uma opção pra continuar." : "Essa pergunta é obrigatória — responda pra continuar.";
+    }
+    return null;
+  }
+
+  function avancar() {
+    const erro = validarPerguntaAtual();
+    if (erro) {
+      toast.erro(erro);
+      return;
+    }
+    if (indice + 1 >= PERGUNTAS.length) {
+      finalizarConsulta();
+      return;
+    }
+    setIndice((i) => i + 1);
+  }
+  function voltar() {
+    setIndice((i) => Math.max(-1, i - 1));
+  }
+
+  function escolherSingle(p: Pergunta, label: string) {
+    setEscolhas((prev) => ({ ...prev, [p.id]: label }));
+    const valorReal = p.mapa ? p.mapa[label] : label;
+    set(p.campo, valorReal as never);
+  }
+
+  function escolherSingleDetail(p: Pergunta, label: string) {
+    setEscolhas((prev) => ({ ...prev, [p.id]: label }));
+    if (label !== p.detalheObrigatorioSe) set(p.campo, "" as never);
+  }
+
+  function escolherMulti(p: Pergunta, label: string, marcado: boolean) {
+    const opcaoNenhuma = p.opcoes?.find((o) => o.toLowerCase().startsWith("nenhuma"));
+    setRespostas((prev) => {
+      const atual = (prev[p.campo] as string[]) ?? [];
+      let novo: string[];
+      if (marcado) {
+        if (opcaoNenhuma && label === opcaoNenhuma) {
+          novo = [label];
+        } else {
+          novo = [...atual.filter((v) => v !== opcaoNenhuma), label];
+        }
+      } else {
+        novo = atual.filter((v) => v !== label);
+      }
+      return { ...prev, [p.campo]: novo };
+    });
+  }
+
+  /** Monta o payload pra API a partir do estado de respostas — traduz rótulos
+   *  em valores reais, mescla campos correlatos (ex: alimento favorito entra
+   *  na mesma lista de preferências usada pelo gerador de plano) e converte
+   *  os campos "single_detail" (Não/Sim + detalhe) em texto simples. */
+  function montarPayload() {
+    const preferenciasAlimentares = [respostas.alimento_favorito].filter((s) => s.trim());
+    const alimentosEvitados = [respostas.alimento_rejeitado].filter((s) => s.trim());
+    const medicamentos = paraLista(respostas.medicamentos_em_uso);
+    if (respostas.medicacao_sono.trim()) medicamentos.push(respostas.medicacao_sono.trim());
+
+    return {
+      peso_kg: numeroDaFaixa(respostas.peso_kg),
+      altura_cm: numeroDaFaixa(respostas.altura_cm),
+      idade: Number(respostas.idade),
+      genero: respostas.genero as Genero,
+      nivel_atividade: respostas.nivel_atividade as NivelAtividade,
+      objetivo: respostas.objetivo as ObjetivoNutricional,
+      peso_meta_kg: respostas.peso_meta_kg ? Number(respostas.peso_meta_kg) : null,
+      restricoes_alimentares: paraLista(respostas.restricoes_alimentares),
+      alergias: paraLista(respostas.alergias),
+      condicoes_saude: respostas.condicoes_saude.map((l) => CONDICOES_SAUDE_SLUGS[l]).filter(Boolean),
+      condicoes_saude_outras: null as string | null,
+      medicamentos_em_uso: medicamentos,
+      consumo_alcool: respostas.consumo_alcool as ConsumoAlcool,
+      tabagismo: respostas.tabagismo as StatusTabagismo,
+      refeicoes_por_dia: 4,
+      preferencias_alimentares: preferenciasAlimentares,
+      alimentos_evitados: alimentosEvitados,
+      qualidade_sono: respostas.qualidade_sono_categoria === "Bom" ? 4 : respostas.qualidade_sono_categoria === "Regular" ? 3 : respostas.qualidade_sono_categoria === "Ruim" ? 2 : null,
+      nivel_estresse:
+        respostas.nivel_estresse_categoria === "Não, nada me afeta." ? 1 :
+        respostas.nivel_estresse_categoria === "Sim, estressado e cansado pela manhã e agitado pela noite" ? 5 :
+        respostas.nivel_estresse_categoria ? 4 : null,
+      observacoes: respostas.observacoes || null,
+      gestante: respostas.situacoes_especiais.includes("Estou grávida"),
+      lactante: respostas.situacoes_especiais.includes("Estou amamentando"),
+      historico_transtorno_alimentar: respostas.situacoes_especiais.includes("Tenho ou já tive transtorno alimentar"),
+
+      profissao: null,
+      tipo_suporte_esperado: respostas.tipo_suporte_esperado || null,
+      horas_sono: respostas.horas_sono || null,
+      insonia: respostas.insonia,
+      medicacao_sono: respostas.medicacao_sono || null,
+      disposicao_manha: respostas.disposicao_manha || null,
+      disposicao_tarde: respostas.disposicao_tarde || null,
+      disposicao_noite: respostas.disposicao_noite || null,
+      concentracao: respostas.concentracao || null,
+      memoria_recente: respostas.memoria_recente || null,
+      memoria_antiga: respostas.memoria_antiga || null,
+      rotina_trabalho: respostas.rotina_trabalho || null,
+      doencas_familiares: respostas.doencas_familiares,
+      historico_cirurgias: respostas.historico_cirurgias || null,
+      suplementos_em_uso: respostas.suplementos_em_uso || null,
+      dieta_anterior: respostas.dieta_anterior || null,
+      ingestao_agua_copos: respostas.ingestao_agua_copos || null,
+      quem_prepara_comida: respostas.quem_prepara_comida || null,
+      refeicao_sozinho_ou_acompanhado: respostas.refeicao_sozinho_ou_acompanhado || null,
+      horario_mais_fome: respostas.horario_mais_fome,
+      mastigacao: respostas.mastigacao || null,
+      preferencia_sabor: respostas.preferencia_sabor,
+      frequencia_restaurante: respostas.frequencia_restaurante || null,
+      historico_dietetico: respostas.historico_dietetico || null,
+      perda_peso_nao_intencional: respostas.perda_peso_nao_intencional || null,
+      ganho_peso_nao_intencional: respostas.ganho_peso_nao_intencional || null,
+      como_conheceu: respostas.como_conheceu || null,
+    };
+  }
+
+  async function finalizarConsulta() {
+    setEnviando(true);
+    try {
+      const resposta = await fetch("/api/gerar-plano", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(montarPayload()),
+      });
+
+      const dados = await resposta.json();
+      if (!resposta.ok) throw new Error(dados.erro ?? "Erro ao gerar o plano.");
+
+      setResultadoFinal({
+        observacoes: dados.observacoesNutricionista,
+        avisos: dados.avisos ?? [],
+        resumo: dados.resumoConsulta ?? "",
+        avisoMetaPeso: dados.avisoMetaPeso ?? null,
+      });
+      toast.sucesso("Sua consulta foi concluída com sucesso!");
+    } catch (erro) {
+      toast.erro(erro instanceof Error ? erro.message : "Erro inesperado.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (resultadoFinal) {
+    return (
+      <Card className="mx-auto max-w-xl animate-fade-in-up">
+        <CardContent className="text-center py-10">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
+            <Stethoscope className="h-6 w-6 text-brand-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-foreground">
+            {retorno ? "Consulta de retorno concluída!" : "Consulta concluída!"}
+          </h2>
+          {retorno && diffPeso !== null && diffPeso !== 0 && (
+            <p
+              className={`mt-2 inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-medium ${
+                diffPeso < 0 ? "bg-success-500/10 text-success-500" : "bg-brand-50 text-brand-700"
+              }`}
+            >
+              {diffPeso < 0 ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+              {diffPeso < 0
+                ? `Você perdeu ${Math.abs(diffPeso)} kg desde a última consulta`
+                : `Você ganhou ${diffPeso} kg desde a última consulta`}
+            </p>
+          )}
+          {resultadoFinal.avisoMetaPeso && (
+            <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-danger-500/30 bg-danger-500/10 px-4 py-3 text-left text-sm text-foreground">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger-500" />
+              <p>{resultadoFinal.avisoMetaPeso}</p>
+            </div>
+          )}
+          {preview && (
+            <div className="mt-4 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
+              <Metrica label="IMC" valor={preview.imc.toString()} sub={preview.classificacaoImc} />
+              <Metrica label="TMB" valor={`${preview.tmb} kcal`} />
+              <Metrica label="TDEE" valor={`${preview.tdee} kcal`} />
+              <Metrica label="Meta calórica" valor={`${preview.metaCalorica} kcal`} />
+            </div>
+          )}
+          {resultadoFinal.resumo && (
+            <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-left text-sm leading-relaxed text-foreground">
+              {resultadoFinal.resumo.split("\n\n").map((paragrafo, i) => (
+                <p key={i}>{paragrafo}</p>
+              ))}
+            </div>
+          )}
+          <p className="mt-5 text-sm text-muted">{resultadoFinal.observacoes}</p>
+          {retorno && (
+            <p className="mt-2 text-xs text-muted">
+              Seu plano alimentar anterior foi substituído por um novo, ajustado a esses dados.
+            </p>
+          )}
+          <Button className="mt-6" onClick={() => router.push("/plano")}>
+            Ver meu plano alimentar
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // ---- Tela de intro ----
+  if (indice === -1) {
+    return (
+      <div className="mx-auto max-w-xl">
+        <Card>
+          <CardContent className="py-10 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
+              <Stethoscope className="h-6 w-6 text-brand-600" />
+            </div>
+            <h2 className="text-lg font-semibold text-foreground">
+              {retorno ? "Consulta de Retorno" : "Consulta Nutricional"}
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              Uma pergunta por vez, baseada na anamnese completa de uma nutricionista. As com{" "}
+              <span className="text-danger-500 font-medium">*</span> são obrigatórias — o resto você pode deixar em branco.
+            </p>
+            <Button className="mt-6" onClick={() => setIndice(0)}>
+              Começar consulta
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!pergunta) return null;
+  const progresso = Math.round(((indice + 1) / PERGUNTAS.length) * 100);
+  const opcaoAtual = escolhas[pergunta.id];
+  const mostrarDetalhe = pergunta.tipo === "single_detail" && opcaoAtual === pergunta.detalheObrigatorioSe;
+
+  return (
+    <div className="mx-auto max-w-xl">
+      <div className="mb-5 h-1.5 rounded-full bg-black/10">
+        <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${progresso}%` }} />
+      </div>
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-600">
+        Pergunta {indice + 1} de {PERGUNTAS.length}
+      </p>
+
+      <Card>
+        <CardContent className="py-8 animate-fade-in-up">
+          <h2 className="text-base font-semibold leading-snug text-foreground">
+            {pergunta.texto} {pergunta.obrigatoria && <span className="text-danger-500">*</span>}
+            {!pergunta.obrigatoria && <span className="ml-1 text-xs font-normal text-muted">(opcional)</span>}
+          </h2>
+          {pergunta.hint && <p className="mt-1 text-xs text-muted">{pergunta.hint}</p>}
+
+          <div className="mt-5">
+            {pergunta.tipo === "text" && (
+              <Textarea
+                placeholder={pergunta.placeholder}
+                value={(respostas[pergunta.campo] as string) ?? ""}
+                onChange={(e) => set(pergunta.campo, e.target.value as never)}
+              />
+            )}
+
+            {pergunta.tipo === "numero" && (
+              <Input
+                type="number"
+                min={pergunta.campo === "idade" ? 18 : 1}
+                step={pergunta.campo === "peso_meta_kg" ? "0.1" : "1"}
+                value={(respostas[pergunta.campo] as string) ?? ""}
+                onChange={(e) => set(pergunta.campo, e.target.value as never)}
+              />
+            )}
+
+            {pergunta.tipo === "dropdown" && (
+              <Select
+                value={opcaoAtual ?? ""}
+                onChange={(e) => escolherSingle(pergunta, e.target.value)}
+              >
+                <option value="" disabled>Selecione...</option>
+                {pergunta.opcoes?.map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </Select>
+            )}
+
+            {pergunta.tipo === "single" && (
+              <div className="flex flex-col gap-2">
+                {pergunta.opcoes?.map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    onClick={() => escolherSingle(pergunta, o)}
+                    className={`rounded-xl border px-4 py-2.5 text-left text-sm transition-colors ${
+                      opcaoAtual === o
+                        ? "border-brand-500 bg-brand-50 font-medium text-brand-700"
+                        : "border-border bg-white text-foreground hover:bg-black/[0.02]"
+                    }`}
+                  >
+                    {o}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {pergunta.tipo === "single_detail" && (
+              <>
+                <div className="flex flex-col gap-2">
+                  {pergunta.opcoes?.map((o) => (
+                    <button
+                      key={o}
+                      type="button"
+                      onClick={() => escolherSingleDetail(pergunta, o)}
+                      className={`rounded-xl border px-4 py-2.5 text-left text-sm transition-colors ${
+                        opcaoAtual === o
+                          ? "border-brand-500 bg-brand-50 font-medium text-brand-700"
+                          : "border-border bg-white text-foreground hover:bg-black/[0.02]"
+                      }`}
+                    >
+                      {o}
+                    </button>
+                  ))}
+                </div>
+                {mostrarDetalhe && (
+                  <div className="mt-3">
+                    <Textarea
+                      placeholder={pergunta.detalhePlaceholder ?? "Descreva..."}
+                      value={(respostas[pergunta.campo] as string) ?? ""}
+                      onChange={(e) => set(pergunta.campo, e.target.value as never)}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
+            {pergunta.tipo === "multi" && (
+              <div className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-white p-3 sm:grid-cols-2 max-h-72 overflow-y-auto">
+                {pergunta.opcoes?.map((o) => (
+                  <label key={o} htmlFor={`q${pergunta.id}-${o}`} className="flex cursor-pointer items-center gap-2.5 text-sm text-foreground">
+                    <input
+                      id={`q${pergunta.id}-${o}`}
+                      type="checkbox"
+                      checked={((respostas[pergunta.campo] as string[]) ?? []).includes(o)}
+                      onChange={(e) => escolherMulti(pergunta, o, e.target.checked)}
+                      className="h-4 w-4 rounded border-border text-brand-500 focus:ring-2 focus:ring-brand-400"
+                    />
+                    {o}
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {pergunta.campo === "peso_meta_kg" && preview?.avisoMetaPeso && (
+              <div className="mt-3 flex items-start gap-2 rounded-xl border border-danger-500/30 bg-danger-500/10 px-3 py-2.5 text-xs text-foreground">
+                <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger-500" />
+                {preview.avisoMetaPeso}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="mt-5 flex items-center justify-between">
+        <Button variante="secundaria" onClick={voltar}>
+          <ChevronLeft className="h-4 w-4" /> Voltar
+        </Button>
+        <Button onClick={avancar} carregando={enviando}>
+          {indice + 1 >= PERGUNTAS.length ? (enviando ? "Gerando seu plano..." : "Finalizar consulta") : (
+            <>Próxima <ChevronRight className="h-4 w-4" /></>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Metrica({ label, valor, sub }: { label: string; valor: string; sub?: string }) {
+  return (
+    <div className="rounded-xl bg-black/[0.02] px-3 py-2.5 text-center">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="text-base font-semibold text-foreground">{valor}</p>
+      {sub && <p className="text-xs text-muted">{sub}</p>}
+    </div>
+  );
+}

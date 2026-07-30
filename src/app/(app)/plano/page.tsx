@@ -13,15 +13,20 @@ import { toast } from "@/components/ui/Toast";
 import { DIAS_SEMANA, DIAS_SEMANA_LABEL } from "@/lib/utils/date";
 import type { RefeicaoPlano, DiaSemana, Receita } from "@/types/domain";
 
+/** Dia da semana de hoje, no mesmo formato usado em dia_semana (segunda..domingo). */
+function diaSemanaHoje(): DiaSemana {
+  const indiceDiaJs = new Date().getDay(); // 0 = domingo
+  return DIAS_SEMANA[(indiceDiaJs + 6) % 7];
+}
+
 export default function PlanoPage() {
   const { user, carregando: carregandoUsuario } = useUser();
   const supabase = createClient();
-
   const [planoId, setPlanoId] = useState<string | null>(null);
   const [refeicoes, setRefeicoes] = useState<RefeicaoPlano[]>([]);
   const [receitas, setReceitas] = useState<Receita[]>([]);
   const [carregando, setCarregando] = useState(true);
-  const [diaSelecionado, setDiaSelecionado] = useState<DiaSemana>(DIAS_SEMANA[0]);
+  const [diaSelecionado, setDiaSelecionado] = useState<DiaSemana>(diaSemanaHoje);
   const [modalAberto, setModalAberto] = useState<{ dia: DiaSemana; refeicao: RefeicaoPlano | null } | null>(null);
 
   useEffect(() => {
@@ -44,14 +49,12 @@ export default function PlanoPage() {
       .eq("usuario_id", user.id)
       .eq("ativo", true)
       .maybeSingle();
-
     if (!plano) {
       setPlanoId(null);
       setRefeicoes([]);
       setCarregando(false);
       return;
     }
-
     setPlanoId(plano.id);
     const { data } = await supabase
       .from("refeicoes_plano")
@@ -59,7 +62,6 @@ export default function PlanoPage() {
       .eq("plano_id", plano.id)
       .order("dia_semana", { ascending: true })
       .order("ordem", { ascending: true });
-
     setRefeicoes((data ?? []) as RefeicaoPlano[]);
     setCarregando(false);
   }
@@ -71,7 +73,6 @@ export default function PlanoPage() {
 
   async function salvarRefeicao(dados: DadosFormularioRefeicao) {
     if (!modalAberto || !planoId) return;
-
     if (modalAberto.refeicao) {
       const { data, error } = await supabase
         .from("refeicoes_plano")
@@ -125,7 +126,6 @@ export default function PlanoPage() {
   async function duplicarDia(diaOrigem: DiaSemana, diaDestino: DiaSemana) {
     const doDia = refeicoes.filter((r) => r.dia_semana === diaOrigem);
     if (doDia.length === 0) return toast.erro("Não há refeições para duplicar neste dia.");
-
     const novas = doDia.map(({ id: _id, criado_em: _criado, ...resto }) => ({
       ...resto,
       dia_semana: diaDestino,
@@ -144,7 +144,6 @@ export default function PlanoPage() {
       .select()
       .single();
     if (error || !data) return toast.erro("Erro ao duplicar a semana.");
-
     const novasRefeicoes = refeicoes.map(({ id: _id, criado_em: _criado, ...resto }) => ({
       ...resto,
       plano_id: data.id,
@@ -184,7 +183,6 @@ export default function PlanoPage() {
           <Copy className="h-4 w-4" /> Duplicar semana
         </Button>
       </div>
-
       <div className="mb-5 flex gap-1 overflow-x-auto rounded-xl bg-black/[0.03] p-1">
         {DIAS_SEMANA.map((dia) => (
           <button
@@ -198,7 +196,6 @@ export default function PlanoPage() {
           </button>
         ))}
       </div>
-
       <div className="space-y-3">
         {refeicoesDoDia.length === 0 ? (
           <EmptyState
@@ -218,7 +215,6 @@ export default function PlanoPage() {
             />
           ))
         )}
-
         <div className="flex flex-wrap gap-2 pt-2">
           <Button variante="secundaria" onClick={() => setModalAberto({ dia: diaSelecionado, refeicao: null })}>
             <Plus className="h-4 w-4" /> Adicionar refeição
@@ -244,7 +240,6 @@ export default function PlanoPage() {
           )}
         </div>
       </div>
-
       {modalAberto && (
         <MealForm
           aberto

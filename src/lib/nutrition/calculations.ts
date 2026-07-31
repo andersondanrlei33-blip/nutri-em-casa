@@ -931,7 +931,9 @@ function escolherVariante(variantes: string[], chave: string, numeroConsulta: nu
   for (let i = 0; i < chave.length; i++) hash = (hash * 31 + chave.charCodeAt(i)) % 997;
   const indice = (hash + Math.max(0, numeroConsulta - 1)) % variantes.length;
   return variantes[indice];
-}// ---------------------------------------------------------------------------
+}
+
+// ---------------------------------------------------------------------------
 // Elogios (pontos fortes) — cada função representa UMA situação e retorna
 // null quando ela não se aplica ao paciente. As variantes ficam num array
 // logo acima de cada função, pra facilitar adicionar mais no futuro.
@@ -1656,4 +1658,567 @@ function montarPrioridades(pontosAtencao: PontoAtencao[]): string[] {
     if (prioridades.length >= 5) break;
   }
   return prioridades;
+}
+
+const VARIANTES_MENSAGEM_NENHUM_PONTO = [
+  "Você já possui uma excelente base de hábitos saudáveis, exatamente o que serve de alicerce para alcançar seus objetivos. Agora vamos apenas ajustar alguns detalhes junto com o plano alimentar para potencializar ainda mais os seus resultados.",
+  "Sua avaliação mostrou uma base de hábitos muito sólida — isso facilita bastante o caminho a partir daqui. Vamos usar o plano alimentar para refinar os últimos detalhes e potencializar seus resultados.",
+  "Você chega nessa consulta com hábitos já muito bem estabelecidos, o que é uma grande vantagem. Daqui pra frente, é questão de ajustar detalhes finos junto com o plano alimentar para colher ainda mais resultado.",
+  "Sua base de hábitos está excelente, e isso conta muito a seu favor. O plano alimentar agora entra para afinar os últimos ajustes e potencializar o que você já vem fazendo bem.",
+  "Você já reúne praticamente tudo que é necessário em termos de hábitos — o que falta agora é só o ajuste fino que o plano alimentar vai trazer, para extrair o máximo desses fundamentos sólidos.",
+];
+
+const VARIANTES_MENSAGEM_RISCO_ALTO = [
+  "Embora existam alguns pontos que mereçam mais atenção neste momento, cada pequena mudança já representa um avanço importante para sua saúde. Não é preciso mudar tudo de uma vez: vamos priorizar o que fará mais diferença primeiro e evoluir um passo de cada vez.",
+  "Sua avaliação trouxe alguns pontos que pedem atenção mais próxima agora — mas cada mudança, por menor que seja, já é um avanço real. Vamos focar primeiro no que trará mais impacto e seguir daí, um passo de cada vez.",
+  "Existem alguns pontos importantes para cuidar neste momento, e isso é normal — o caminho não precisa ser percorrido de uma vez só. Vamos priorizar o que fizer mais diferença agora e avançar aos poucos a partir daí.",
+  "Alguns fatores identificados aqui merecem atenção redobrada, mas nenhuma mudança precisa acontecer de uma vez. O plano é começar pelo que trará o maior impacto e seguir evoluindo com calma e consistência.",
+  "Sua consulta trouxe alguns pontos que pedem mais cuidado agora — e cada avanço, mesmo pequeno, já conta bastante. Vamos priorizar o que fará mais diferença primeiro, sem pressa, um passo de cada vez.",
+];
+
+const VARIANTES_MENSAGEM_MODERADO_SEM_FORTES = [
+  "Esse é só o começo: pequenas mudanças consistentes costumam gerar resultados muito maiores do que mudanças radicais. Vamos trabalhar juntos, um passo de cada vez, nos pontos que mais importam agora.",
+  "Esse é o ponto de partida da sua jornada — mudanças pequenas e consistentes tendem a render resultados muito mais duradouros do que radicais. Vamos avançar juntos, priorizando o que mais importa primeiro.",
+  "Esse momento marca o início — e o caminho mais eficaz costuma ser o de mudanças graduais e constantes, não o de cortes bruscos. Vamos seguir juntos, focando primeiro no que faz mais diferença.",
+  "Esse é apenas o primeiro passo de um processo — e processos que funcionam de verdade costumam ser feitos de pequenas mudanças sustentadas, não de reviravoltas radicais. Vamos avançar juntos, com calma.",
+  "Você está no começo dessa jornada, e é bom lembrar: mudanças pequenas e constantes tendem a durar muito mais do que mudanças drásticas. Vamos caminhar juntos, priorizando o que importa mais primeiro.",
+];
+
+const VARIANTES_MENSAGEM_MODERADO_COM_FORTES = [
+  "Sua avaliação mostrou diversos pontos positivos e algumas oportunidades de melhoria. O mais importante é focar em mudanças graduais e consistentes, pois são elas que costumam trazer os resultados mais duradouros.",
+  "Você já traz bons hábitos para essa consulta, junto com algumas oportunidades claras de melhoria. O foco agora é seguir com mudanças graduais e consistentes, que costumam ser as que realmente se sustentam ao longo do tempo.",
+  "Sua avaliação combina pontos fortes reais com alguns pontos de melhoria — uma boa base para seguir em frente. Mudanças graduais e constantes tendem a trazer os resultados mais duradouros a partir daqui.",
+  "Você chega com uma boa mistura de hábitos positivos e pontos a desenvolver. O caminho mais eficaz a partir daqui é seguir com ajustes graduais e consistentes, que costumam durar muito mais do que mudanças bruscas.",
+  "Sua consulta mostrou tanto pontos fortes quanto oportunidades de melhoria — um ótimo ponto de partida. Mudanças graduais e mantidas ao longo do tempo tendem a trazer os resultados mais sólidos e duradouros.",
+];
+
+/** Nível de risco combinado dos pontos de atenção, usado só pra escolher o
+ *  tom certo da mensagem final — "alto" quando há algo clinicamente sério
+ *  (prioridade <= 4, ou seja condição de saúde relevante / mudança de peso
+ *  não intencional) ou quando há muitos pontos acumulados de uma vez. */
+function calcularNivelRisco(pontosAtencao: PontoAtencao[]): "nenhum" | "moderado" | "alto" {
+  if (pontosAtencao.length === 0) return "nenhum";
+  const temFatorGrave = pontosAtencao.some((p) => p.prioridade <= 4);
+  if (temFatorGrave || pontosAtencao.length >= 4) return "alto";
+  return "moderado";
+}
+
+function montarMensagemFinal(pontosFortes: string[], pontosAtencao: PontoAtencao[], numeroConsulta: number): string {
+  const risco = calcularNivelRisco(pontosAtencao);
+
+  if (risco === "nenhum") {
+    return escolherVariante(VARIANTES_MENSAGEM_NENHUM_PONTO, "mensagem_nenhum", numeroConsulta);
+  }
+  if (risco === "alto") {
+    return escolherVariante(VARIANTES_MENSAGEM_RISCO_ALTO, "mensagem_alto", numeroConsulta);
+  }
+  if (pontosFortes.length === 0) {
+    return escolherVariante(VARIANTES_MENSAGEM_MODERADO_SEM_FORTES, "mensagem_moderado_sem_fortes", numeroConsulta);
+  }
+  return escolherVariante(VARIANTES_MENSAGEM_MODERADO_COM_FORTES, "mensagem_moderado_com_fortes", numeroConsulta);
+}
+
+const VARIANTES_RESUMO_ABERTURA = [
+  "Após analisar suas respostas, ",
+  "Com base em tudo que você respondeu, ",
+  "Analisando o conjunto das suas respostas, ",
+  "A partir da sua avaliação, ",
+];
+
+const VARIANTES_RESUMO_IMC_ACOLHIMENTO = [
+  "Esse é apenas um dos indicadores usados na avaliação e não define sozinho seu estado de saúde — considerando seus hábitos e seu objetivo, ",
+  "Esse número é só um entre vários indicadores que olhamos na consulta, e não conta a história toda sozinho — considerando seus hábitos e seu objetivo, ",
+  "Vale lembrar que esse é apenas um indicador entre outros, e não define seu estado de saúde isoladamente — levando em conta seus hábitos e objetivo, ",
+  "Esse dado é só uma parte do quadro geral avaliado na consulta, não a história completa — considerando seus hábitos e o que você busca, ",
+];
+
+function montarResumoGeral(
+  imc: number,
+  classificacaoImc: string,
+  objetivo: ObjetivoNutricional,
+  metaCalorica: number,
+  avisoSeguranca: string | null,
+  numeroConsulta: number
+): string {
+  // Só a primeira letra vira minúscula (a frase começa no meio: "...está na
+  // faixa de X") — preserva o algarismo romano em "Obesidade grau II/III".
+  const classificacaoLower = classificacaoImc.charAt(0).toLowerCase() + classificacaoImc.slice(1);
+  const objetivoTexto = OBJETIVO_TEXTO[objetivo];
+  const abertura = escolherVariante(VARIANTES_RESUMO_ABERTURA, "resumo_abertura", numeroConsulta);
+  const base =
+    classificacaoImc === "Peso normal"
+      ? `${abertura}seu IMC está na faixa de ${classificacaoLower} e o foco a partir de agora vai ser ${objetivoTexto}.`
+      : `${abertura}seu IMC está na faixa de ${classificacaoLower}. ` +
+        `${escolherVariante(VARIANTES_RESUMO_IMC_ACOLHIMENTO, "resumo_imc_acolhimento", numeroConsulta)}` +
+        `o foco a partir de agora vai ser ${objetivoTexto}.`;
+  if (avisoSeguranca) return `${base} ${avisoSeguranca}`;
+  return `${base} Sua meta calórica foi definida em ${metaCalorica} kcal por dia, buscando um resultado gradual e seguro.`;
+}
+
+function montarRelatorioConsulta(params: {
+  imc: number;
+  classificacaoImc: string;
+  tmb: number;
+  tdee: number;
+  metaCalorica: number;
+  objetivo: ObjetivoNutricional;
+  avisoSeguranca: string | null;
+  avisoMetaPeso: string | null;
+  condicoesSaude: CondicaoSaude[];
+  gestante: boolean;
+  lactante: boolean;
+  historicoTranstornoAlimentar: boolean;
+  condicaoClinicaComplexa: string | null;
+  perdaPesoNaoIntencional: string | null | undefined;
+  ganhoPesoNaoIntencional: string | null | undefined;
+  nivelAtividade: NivelAtividade;
+  ingestaoAguaCopos: string | null | undefined;
+  aguaMl: number;
+  horasSono: string | null | undefined;
+  qualidadeSono: number | null;
+  insonia: boolean;
+  nivelEstresse: number | null;
+  consumoAlcool: ConsumoAlcool;
+  tabagismo: StatusTabagismo;
+  frequenciaRestaurante: string | null | undefined;
+  mastigacao: string | null | undefined;
+  rotinaTrabalho: string | null | undefined;
+  disposicaoManha: string | null | undefined;
+  disposicaoTarde: string | null | undefined;
+  disposicaoNoite: string | null | undefined;
+  restricoesAlimentares: string[];
+  historicoDietetico: string | null | undefined;
+  dietaAnterior: string | null | undefined;
+  /** Número sequencial da consulta do paciente (1ª, 2ª, 3ª...) — usado só
+   *  pra rotacionar as variantes de texto e evitar repetição entre
+   *  consultas. Se não vier informado, assume 1 (sempre a primeira opção de
+   *  cada lista de variantes). */
+  numeroConsulta?: number;
+}): RelatorioConsulta {
+  const numeroConsulta = params.numeroConsulta ?? 1;
+
+  const pontosFortes = [
+    elogiarSono(params.qualidadeSono, params.horasSono, params.insonia, numeroConsulta),
+    elogiarHidratacao(params.ingestaoAguaCopos, params.aguaMl, numeroConsulta),
+    elogiarAtividadeFisica(params.nivelAtividade, numeroConsulta),
+    elogiarAlcool(params.consumoAlcool, numeroConsulta),
+    elogiarTabagismo(params.tabagismo, numeroConsulta),
+    elogiarEstresse(params.nivelEstresse, numeroConsulta),
+    elogiarMastigacao(params.mastigacao, numeroConsulta),
+    elogiarDisposicao(params.disposicaoManha, params.disposicaoTarde, params.disposicaoNoite, numeroConsulta),
+    elogiarRotinaAlimentar(params.frequenciaRestaurante, numeroConsulta),
+  ].filter((texto): texto is string => Boolean(texto));
+
+  const condicoesSaude = montarBlocosCondicoesSaude({
+    condicoesSaude: params.condicoesSaude,
+    classificacaoImc: params.classificacaoImc,
+    gestante: params.gestante,
+    lactante: params.lactante,
+    historicoTranstornoAlimentar: params.historicoTranstornoAlimentar,
+    condicaoClinicaComplexa: params.condicaoClinicaComplexa,
+    perdaPesoNaoIntencional: params.perdaPesoNaoIntencional,
+    ganhoPesoNaoIntencional: params.ganhoPesoNaoIntencional,
+    numeroConsulta,
+  });
+
+  const habitosVida = montarBlocosHabitosVida({
+    nivelAtividade: params.nivelAtividade,
+    objetivo: params.objetivo,
+    ingestaoAguaCopos: params.ingestaoAguaCopos,
+    aguaMl: params.aguaMl,
+    horasSono: params.horasSono,
+    qualidadeSono: params.qualidadeSono,
+    insonia: params.insonia,
+    nivelEstresse: params.nivelEstresse,
+    consumoAlcool: params.consumoAlcool,
+    tabagismo: params.tabagismo,
+    frequenciaRestaurante: params.frequenciaRestaurante,
+    mastigacao: params.mastigacao,
+    rotinaTrabalho: params.rotinaTrabalho,
+    numeroConsulta,
+  });
+
+  const pontosAtencao = [...condicoesSaude, ...habitosVida].sort((a, b) => a.prioridade - b.prioridade);
+
+  return {
+    imc: params.imc,
+    classificacaoImc: params.classificacaoImc,
+    tmb: params.tmb,
+    tdee: params.tdee,
+    metaCalorica: params.metaCalorica,
+    resumoGeral: montarResumoGeral(
+      params.imc,
+      params.classificacaoImc,
+      params.objetivo,
+      params.metaCalorica,
+      params.avisoSeguranca,
+      numeroConsulta
+    ),
+    pontosFortes,
+    pontosAtencao,
+    condicoesSaude,
+    habitosVida,
+    alimentacao: montarAlimentacao({
+      restricoesAlimentares: params.restricoesAlimentares,
+      historicoDietetico: params.historicoDietetico,
+      dietaAnterior: params.dietaAnterior,
+      numeroConsulta,
+    }),
+    prioridades: montarPrioridades(pontosAtencao),
+    mensagemFinal: montarMensagemFinal(pontosFortes, pontosAtencao, numeroConsulta),
+    avisoMetaPeso: params.avisoMetaPeso,
+  };
+}
+
+
+
+
+const OBJETIVO_TEXTO: Record<ObjetivoNutricional, string> = {
+  emagrecimento: "emagrecer",
+  manutencao: "manter seu peso atual",
+  ganho_massa: "ganhar massa muscular",
+  saude_geral: "cuidar da sua saúde de forma geral",
+  performance_esportiva: "melhorar sua performance esportiva",
+};
+
+/**
+ * Monta o resumo em texto corrido descrito acima. Determinístico: junta as
+ * mesmas frases já geradas pelas funções avaliar... e identificar... (já cobertas
+ * por teste individualmente) em blocos por tema, em vez de reescrever tudo
+ * do zero — assim nunca perde nem distorce um dado de segurança.
+ */
+function montarResumoConsulta(params: {
+  imc: number;
+  classificacaoImc: string;
+  metaCalorica: number;
+  objetivo: ObjetivoNutricional;
+  avisoSeguranca: string | null;
+  avisoMetaPeso: string | null;
+  avisosMudancaPeso: string[];
+  avisosCondicoes: string[];
+  avisosGestacaoCondicao: string[];
+  avisosObjetivoRisco: string[];
+  avisosAlcool: string[];
+  avisosAlcoolReducaoDeDanos: string[];
+  avisosTabagismo: string[];
+  avisosSono: string[];
+  avisosSonoDuracao: string[];
+  avisosDieta: string[];
+  avisosMedicamentos: string[];
+  avisosAtividade: string[];
+  avisosHidratacao: string[];
+  avisosHistoricoDietas: string[];
+  avisosRiscoFamiliar: string[];
+  avisosRotinaTrabalho: string[];
+  avisosMastigacao: string[];
+  avisosFrequenciaRestaurante: string[];
+  observacoesPaciente?: string | null;
+}): string {
+  const paragrafos: string[] = [];
+
+  const objetivoTexto = OBJETIVO_TEXTO[params.objetivo];
+  const abertura =
+    `Com base no que você me contou, seu IMC está em ${params.imc} (${params.classificacaoImc.toLowerCase()}) ` +
+    `e vamos trabalhar com foco em ${objetivoTexto}.`;
+  paragrafos.push(
+    params.avisoSeguranca
+      ? `${abertura} ${params.avisoSeguranca}`
+      : `${abertura} Sua meta calórica diária ficou em ${params.metaCalorica} kcal.`
+  );
+
+  if (params.avisoMetaPeso) {
+    paragrafos.push(`⚠️ Sobre a meta de peso que você informou: ${params.avisoMetaPeso}`);
+  }
+
+  if (params.avisosMudancaPeso.length > 0) {
+    paragrafos.push(`⚠️ ${params.avisosMudancaPeso.join(" ")}`);
+  }
+
+  const blocoCondicoes = [
+    ...params.avisosGestacaoCondicao,
+    ...params.avisosCondicoes,
+    ...params.avisosObjetivoRisco,
+    ...params.avisosRiscoFamiliar,
+  ];
+  if (blocoCondicoes.length > 0) {
+    paragrafos.push(`Sobre suas condições de saúde: ${blocoCondicoes.join(" ")}`);
+  }
+
+  const blocoHabitos = [
+    ...params.avisosAlcool,
+    ...params.avisosAlcoolReducaoDeDanos,
+    ...params.avisosTabagismo,
+    ...params.avisosSono,
+    ...params.avisosSonoDuracao,
+    ...params.avisosAtividade,
+    ...params.avisosRotinaTrabalho,
+    ...params.avisosHidratacao,
+  ];
+  if (blocoHabitos.length > 0) {
+    paragrafos.push(`Sobre seus hábitos: ${blocoHabitos.join(" ")}`);
+  }
+
+  const blocoAlimentacao = [
+    ...params.avisosDieta,
+    ...params.avisosMedicamentos,
+    ...params.avisosHistoricoDietas,
+    ...params.avisosMastigacao,
+    ...params.avisosFrequenciaRestaurante,
+  ];
+  if (blocoAlimentacao.length > 0) {
+    paragrafos.push(blocoAlimentacao.join(" "));
+  }
+
+  if (params.observacoesPaciente?.trim()) {
+    paragrafos.push(
+      `Você também comentou: "${params.observacoesPaciente.trim()}" — vou levar isso em conta no seu plano.`
+    );
+  }
+
+  paragrafos.push(
+    "O plano alimentar já foi montado em cima dessas metas — qualquer dúvida ou mudança, é só voltar numa consulta de retorno."
+  );
+
+  return paragrafos.join("\n\n");
+}
+
+/**
+ * Perda ou ganho de peso recente e NÃO intencional são sinais que um
+ * nutricionista sempre investiga — podem ter causas que vão de estresse e
+ * rotina até condições médicas que precisam de avaliação. Isso nunca é
+ * ignorado só porque a pessoa não marcou nenhuma condição de saúde específica
+ * em outra parte da consulta.
+ */
+export function avaliarMudancaPesoNaoIntencional(
+  perdaPesoNaoIntencional: string | null | undefined,
+  ganhoPesoNaoIntencional: string | null | undefined
+): string[] {
+  const avisos: string[] = [];
+  if (perdaPesoNaoIntencional && perdaPesoNaoIntencional.trim()) {
+    avisos.push(
+      "Você relatou perda de peso recente e não intencional. Isso é algo que vale investigar com um médico ou " +
+        "nutricionista presencialmente — perder peso sem estar buscando isso pode ter várias causas e merece uma " +
+        "avaliação, independente do que mais apareceu nesta consulta."
+    );
+  }
+  if (ganhoPesoNaoIntencional && ganhoPesoNaoIntencional.trim()) {
+    avisos.push(
+      "Você relatou ganho de peso recente e não intencional. Vale comentar isso com um médico ou nutricionista " +
+        "presencialmente, principalmente se não conseguir associar a uma mudança clara de rotina ou alimentação."
+    );
+  }
+  return avisos;
+}
+
+/** Executa a bateria completa de cálculos a partir dos dados da consulta. */
+export function gerarResultadoAvaliacao(
+  dados: DadosAntropometricos & {
+    nivelAtividade: NivelAtividade;
+    objetivo: ObjetivoNutricional;
+    condicoesSaude?: CondicaoSaude[];
+    qualidadeSono?: number | null;
+    nivelEstresse?: number | null;
+    restricoesAlimentares?: string[];
+    consumoAlcool?: ConsumoAlcool;
+    medicamentosEmUso?: string[];
+    condicoesSaudeOutras?: string | null;
+    tabagismo?: StatusTabagismo;
+    observacoesPaciente?: string | null;
+    pesoMetaKg?: number | null;
+    insonia?: boolean;
+    historicoCirurgias?: string | null;
+    perdaPesoNaoIntencional?: string | null;
+    ganhoPesoNaoIntencional?: string | null;
+    horasSono?: string | null;
+    ingestaoAguaCopos?: string | null;
+    dietaAnterior?: string | null;
+    historicoDietetico?: string | null;
+    doencasFamiliares?: string[];
+    rotinaTrabalho?: string | null;
+    mastigacao?: string | null;
+    frequenciaRestaurante?: string | null;
+    // Usados só pelo relatório em cartões (seção "o que você já faz bem") —
+    // não entram em nenhum cálculo, são só registro/contexto, igual aos
+    // outros campos da anamnese de 40 perguntas.
+    disposicaoManha?: string | null;
+    disposicaoTarde?: string | null;
+    disposicaoNoite?: string | null;
+    // Número sequencial da consulta do paciente (1ª, 2ª, 3ª...) — usado só
+    // pra rotacionar as variantes de texto do relatório e evitar repetição
+    // entre consultas. Opcional: se não vier, o relatório usa a 1ª variante
+    // de cada situação.
+    numeroConsulta?: number;
+  } & CondicaoEspecial
+): ResultadoAvaliacao {
+  const imc = calcularIMC(dados);
+  const classificacaoImc = classificarIMC(imc);
+  const { pesoMetaKg: pesoMetaSeguro, avisoMetaPeso } = avaliarSegurancaMetaPeso(
+    dados.pesoMetaKg,
+    dados.pesoKg,
+    classificacaoImc,
+    dados.historicoTranstornoAlimentar ?? false
+  );
+  const tmb = calcularTMB(dados);
+  const tdee = calcularTDEE(tmb, dados.nivelAtividade);
+  // Extraído pra variável própria (antes era só uma expressão inline) porque o
+  // relatório em cartões também precisa desse valor mais abaixo — mesma
+  // chamada de identificarCondicaoClinicaComplexa, sem mudar o que ela faz.
+  const condicaoClinicaComplexa = identificarCondicaoClinicaComplexa(
+    [dados.condicoesSaudeOutras, dados.historicoCirurgias].filter(Boolean).join(" ")
+  );
+  const { valor: metaCalorica, avisoSeguranca } = calcularMetaCalorica(tdee, dados.objetivo, dados.genero, {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
+    imcAbaixoDoPesoComObjetivoEmagrecimento: imc < 18.5 && dados.objetivo === "emagrecimento",
+    condicaoClinicaComplexa,
+  });
+
+  const { avisos: avisosCondicoes, limiteProteinaPorKg } = avaliarCondicoesSaude(dados.condicoesSaude ?? []);
+  const macros = calcularMacros(metaCalorica, dados.pesoKg, dados.objetivo, limiteProteinaPorKg);
+  const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade, {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+  });
+  const avisosSono = avaliarSonoEEstresse(dados.qualidadeSono ?? null, dados.nivelEstresse ?? null, dados.insonia ?? false);
+  const avisosDieta = avaliarDietaRestritiva(dados.restricoesAlimentares ?? []);
+  const avisosObjetivoRisco = avaliarObjetivoVsRiscoCardiometabolico(imc, dados.objetivo, dados.condicoesSaude ?? [], {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
+  });
+  const avisosAlcool = avaliarConsumoAlcool(
+    dados.consumoAlcool ?? "nunca",
+    dados.condicoesSaude ?? [],
+    dados.gestante ?? false,
+    dados.lactante ?? false
+  );
+  const avisosGestacaoCondicao = avaliarGestacaoComCondicao(
+    dados.gestante ?? false,
+    dados.lactante ?? false,
+    dados.condicoesSaude ?? []
+  );
+  const avisosMedicamentos = avaliarMedicamentos(dados.medicamentosEmUso ?? []);
+  const avisosTabagismo = avaliarTabagismo(dados.tabagismo ?? "nunca", dados.condicoesSaude ?? []);
+  const avisosMudancaPeso = avaliarMudancaPesoNaoIntencional(dados.perdaPesoNaoIntencional, dados.ganhoPesoNaoIntencional);
+
+  // Novos cruzamentos (campos antes coletados e nunca usados) — ver
+  // pesquisa/plano compartilhado com a nutricionista antes de implementar.
+  const avisosAlcoolReducaoDeDanos = avaliarAlcoolReducaoDeDanos(dados.consumoAlcool ?? "nunca", dados.objetivo);
+  const avisosAtividade = avaliarAtividadeVsObjetivo(dados.nivelAtividade, dados.objetivo);
+  const avisosSonoDuracao = avaliarSonoDuracao(dados.horasSono);
+  const avisosHidratacao = avaliarHidratacaoReal(dados.ingestaoAguaCopos, aguaMl);
+  const avisosHistoricoDietas = avaliarHistoricoDietas(dados.dietaAnterior);
+  const avisosRiscoFamiliar = avaliarRiscoFamiliar(dados.doencasFamiliares ?? [], dados.condicoesSaude ?? [], classificacaoImc);
+  const avisosRotinaTrabalho = avaliarRotinaTrabalho(dados.rotinaTrabalho);
+  const avisosMastigacao = avaliarMastigacao(dados.mastigacao);
+  const avisosFrequenciaRestaurante = avaliarFrequenciaRestaurante(dados.frequenciaRestaurante);
+
+  const avisos = [
+    avisoMetaPeso,
+    avisoSeguranca,
+    ...avisosMudancaPeso,
+    ...avisosGestacaoCondicao,
+    ...avisosCondicoes,
+    ...avisosRiscoFamiliar,
+    ...avisosAlcool,
+    ...avisosAlcoolReducaoDeDanos,
+    ...avisosTabagismo,
+    ...avisosSono,
+    ...avisosSonoDuracao,
+    ...avisosAtividade,
+    ...avisosRotinaTrabalho,
+    ...avisosHidratacao,
+    ...avisosDieta,
+    ...avisosObjetivoRisco,
+    ...avisosMedicamentos,
+    ...avisosHistoricoDietas,
+    ...avisosMastigacao,
+    ...avisosFrequenciaRestaurante,
+  ].filter((a): a is string => Boolean(a));
+
+  const resumo = montarResumoConsulta({
+    imc,
+    classificacaoImc,
+    metaCalorica,
+    objetivo: dados.objetivo,
+    avisoSeguranca,
+    avisoMetaPeso,
+    avisosMudancaPeso,
+    avisosCondicoes,
+    avisosGestacaoCondicao,
+    avisosObjetivoRisco,
+    avisosAlcool,
+    avisosAlcoolReducaoDeDanos,
+    avisosTabagismo,
+    avisosSono,
+    avisosSonoDuracao,
+    avisosDieta,
+    avisosMedicamentos,
+    avisosAtividade,
+    avisosHidratacao,
+    avisosHistoricoDietas,
+    avisosRiscoFamiliar,
+    avisosRotinaTrabalho,
+    avisosMastigacao,
+    avisosFrequenciaRestaurante,
+    observacoesPaciente: dados.observacoesPaciente,
+  });
+
+  const relatorio = montarRelatorioConsulta({
+    imc,
+    classificacaoImc,
+    tmb,
+    tdee,
+    metaCalorica,
+    objetivo: dados.objetivo,
+    avisoSeguranca,
+    avisoMetaPeso,
+    condicoesSaude: dados.condicoesSaude ?? [],
+    gestante: dados.gestante ?? false,
+    lactante: dados.lactante ?? false,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar ?? false,
+    condicaoClinicaComplexa,
+    perdaPesoNaoIntencional: dados.perdaPesoNaoIntencional,
+    ganhoPesoNaoIntencional: dados.ganhoPesoNaoIntencional,
+    nivelAtividade: dados.nivelAtividade,
+    ingestaoAguaCopos: dados.ingestaoAguaCopos,
+    aguaMl,
+    horasSono: dados.horasSono,
+    qualidadeSono: dados.qualidadeSono ?? null,
+    insonia: dados.insonia ?? false,
+    nivelEstresse: dados.nivelEstresse ?? null,
+    consumoAlcool: dados.consumoAlcool ?? "nunca",
+    tabagismo: dados.tabagismo ?? "nunca",
+    frequenciaRestaurante: dados.frequenciaRestaurante,
+    mastigacao: dados.mastigacao,
+    rotinaTrabalho: dados.rotinaTrabalho,
+    disposicaoManha: dados.disposicaoManha,
+    disposicaoTarde: dados.disposicaoTarde,
+    disposicaoNoite: dados.disposicaoNoite,
+    restricoesAlimentares: dados.restricoesAlimentares ?? [],
+    historicoDietetico: dados.historicoDietetico,
+    dietaAnterior: dados.dietaAnterior,
+    numeroConsulta: dados.numeroConsulta,
+  });
+
+  return {
+    imc,
+    classificacaoImc,
+    tmb,
+    tdee,
+    metaCalorica,
+    macros,
+    aguaMl,
+    avisos,
+    resumo,
+    pesoMetaKg: pesoMetaSeguro,
+    avisoMetaPeso,
+    relatorio,
+  };
+}
+
+function arredondar(valor: number, casas: number): number {
+  const fator = 10 ** casas;
+  return Math.round(valor * fator) / fator;
 }

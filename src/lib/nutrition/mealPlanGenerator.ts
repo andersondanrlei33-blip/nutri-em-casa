@@ -195,6 +195,98 @@ function ehTextoDeSobremesa(descricao: string, nomeRefeicao: string, receitasDis
   const textoRefeicao = normalizar(`${nomeRefeicao} ${descricao}`);
   return nomesSobremesa.some((palavra) => textoRefeicao.includes(palavra));
 }
+/** Soma 1h a um horário "HH:MM" — usado pra posicionar a sobremesa de fim
+ *  de semana logo depois do jantar, nunca no mesmo horário. */
+function somarUmaHora(horario: string): string {
+  const [horas, minutos] = horario.split(":").map(Number);
+  const novaHora = (horas + 1) % 24;
+  return `${String(novaHora).padStart(2, "0")}:${String(minutos ?? 0).padStart(2, "0")}`;
+}
+interface ResultadoSobremesa {
+  refeicoes: RefeicaoGerada[];
+  sobremesaAdicionada: string | null;
+}
+/**
+ * Insere, no máximo 1x por semana (sábado, logo depois do jantar), uma
+ * sobremesa REAL da biblioteca — só quando a pessoa declarou uma preferência
+ * que bate com uma sobremesa existente e ela já passa pelo mesmo filtro de
+ * segurança (alergia/restrição) usado em qualquer outra refeição. Nunca
+ * substitui uma refeição principal (essa é a diferença do bug corrigido em
+ * ehTextoDeSobremesa/CATEGORIAS_REFEICAO_PRINCIPAL) — é sempre um extra,
+ * com uma fatia pequena e fixa da meta calórica do dia "emprestada" do
+ * próprio jantar de sábado, pra manter o total diário dentro da margem de
+ * ±5% já estabelecida (nunca aumenta a meta do dia). Decisão 100% do
+ * código, nunca da IA — mesmo princípio de sempre confirmar contra o dado
+ * real antes de mostrar pro paciente.
+ */
+function adicionarSobremesaDeFimDeSemana(
+  refeicoes: RefeicaoGerada[],
+  avaliacao: AvaliacaoNutricional,
+  receitasDisponiveis: Receita[],
+  filtro: FiltroReceitas
+): ResultadoSobremesa {
+  const preferencias = (avaliacao.preferencias_alimentares ?? []).map((p) => p.trim()).filter(Boolean);
+  if (preferencias.length === 0) return { refeicoes, sobremesaAdicionada: null };
+
+  const sobremesasSeguras = receitasDisponiveis.filter(
+    (r) => r.categoria === "sobremesa" && receitaEhSegura(r, filtro)
+  );
+  let sobremesaEscolhida: Receita | null = null;
+  for (const preferencia of preferencias) {
+    const termo = normalizar(preferencia);
+    if (termo.length < 3) continue;
+    const primeiraPalavra = termo.split(" ")[0];
+    const candidata = sobremesasSeguras.find((r) => normalizar(r.nome).includes(primeiraPalavra));
+    if (candidata) {
+      sobremesaEscolhida = candidata;
+      break;
+    }
+  }
+  if (!sobremesaEscolhida) return { refeicoes, sobremesaAdicionada: null };
+
+  const jantarSabado = refeicoes.find((r) => r.dia_semana === "sabado" && r.categoria === "jantar");
+  if (!jantarSabado || jantarSabado.calorias <= 0) return { refeicoes, sobremesaAdicionada: null };
+
+  // Fatia pequena da meta diária pra sobremesa — no máximo 8% ou 200kcal, o
+  // que for menor, pra não desequilibrar o dia mesmo "emprestando" do jantar.
+  const caloriasSobremesaAlvo = Math.min(Math.round(avaliacao.meta_calorica * 0.08), 200);
+  const escalaBruta = sobremesaEscolhida.calorias > 0 ? caloriasSobremesaAlvo / sobremesaEscolhida.calorias : 0.5;
+  const escalaSobremesa = Math.min(1, Math.max(0.3, escalaBruta));
+
+  const sobremesaRefeicao: RefeicaoGerada = {
+    dia_semana: "sabado",
+    nome_refeicao: sobremesaEscolhida.nome,
+    horario: somarUmaHora(jantarSabado.horario),
+    categoria: "sobremesa",
+    descricao: sobremesaEscolhida.descricao ?? sobremesaEscolhida.nome,
+    calorias: Math.round(sobremesaEscolhida.calorias * escalaSobremesa),
+    proteina_g: Math.round(sobremesaEscolhida.proteina_g * escalaSobremesa),
+    carboidrato_g: Math.round(sobremesaEscolhida.carboidrato_g * escalaSobremesa),
+    gordura_g: Math.round(sobremesaEscolhida.gordura_g * escalaSobremesa),
+    receita_id: sobremesaEscolhida.id,
+    quantidade_porcoes: Math.round(escalaSobremesa * sobremesaEscolhida.porcoes * 100) / 100,
+  };
+
+  // "Empresta" as calorias da sobremesa do próprio jantar de sábado, pra que
+  // o total do dia continue igual — nunca aumenta a meta calórica do dia.
+  const fatorReducaoJantar = Math.max(
+    0,
+    (jantarSabado.calorias - sobremesaRefeicao.calorias) / jantarSabado.calorias
+  );
+  const jantarAjustado: RefeicaoGerada = {
+    ...jantarSabado,
+    calorias: Math.round(jantarSabado.calorias * fatorReducaoJantar),
+    proteina_g: Math.round(jantarSabado.proteina_g * fatorReducaoJantar),
+    carboidrato_g: Math.round(jantarSabado.carboidrato_g * fatorReducaoJantar),
+    gordura_g: Math.round(jantarSabado.gordura_g * fatorReducaoJantar),
+    quantidade_porcoes: Math.round((jantarSabado.quantidade_porcoes ?? 1) * fatorReducaoJantar * 100) / 100,
+  };
+
+  const refeicoesAtualizadas = refeicoes.map((r) => (r === jantarSabado ? jantarAjustado : r));
+  refeicoesAtualizadas.push(sobremesaRefeicao);
+
+  return { refeicoes: refeicoesAtualizadas, sobremesaAdicionada: sobremesaEscolhida.nome };
+}
 interface CandidataResumo {
   id: string;
   nome: string;
@@ -494,9 +586,18 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
     }
     return { ...refeicao, receita_id: receitaIdValido, quantidade_porcoes: quantidadePorcoes };
   });
+  // Antes de checar quais preferências ficaram sem atender, dá a chance de
+  // uma delas virar a sobremesa de sábado (extra depois do jantar, nunca no
+  // lugar dele) — só quando bate com uma sobremesa segura da biblioteca.
+  const { refeicoes: refeicoesComSobremesa } = adicionarSobremesaDeFimDeSemana(
+    refeicoesValidadas,
+    avaliacao,
+    receitasDisponiveis,
+    filtro
+  );
   const { texto: notaPreferencias, preferenciasNaoAtendidas } = notaSobrePreferenciasNaoAtendidas(
     avaliacao.preferencias_alimentares,
-    refeicoesValidadas,
+    refeicoesComSobremesa,
     receitasDisponiveis,
     filtro
   );
@@ -509,7 +610,7 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
     preferenciasNaoAtendidas
   );
   const observacoesFinal = [observacoesIALimpas, notaPreferencias].filter(Boolean).join(" ");
-  return { refeicoes: refeicoesValidadas, observacoes_nutricionista: observacoesFinal };
+  return { refeicoes: refeicoesComSobremesa, observacoes_nutricionista: observacoesFinal };
 }
 /**
  * Fallback determinístico: para cada horário do dia, escolhe a receita real
@@ -574,12 +675,20 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
       }
     });
   }
+  // Mesma lógica do caminho com IA: antes de checar preferências sem
+  // atender, dá a chance de uma virar a sobremesa de sábado.
+  const { refeicoes: refeicoesComSobremesa } = adicionarSobremesaDeFimDeSemana(
+    refeicoes,
+    avaliacao,
+    receitasDisponiveis,
+    filtro
+  );
   // Caminho determinístico: o texto abaixo é escrito pelo próprio código
   // (não pela IA), então não tem o risco de duplicar/inventar motivo — só
   // precisamos do texto da nota, sem usar removerMencoesDePreferencias aqui.
   const { texto: notaPreferencias } = notaSobrePreferenciasNaoAtendidas(
     avaliacao.preferencias_alimentares,
-    refeicoes,
+    refeicoesComSobremesa,
     receitasDisponiveis,
     filtro
   );
@@ -592,7 +701,7 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
       : " Troque qualquer refeição pela biblioteca de receitas a qualquer momento — os valores nutricionais do dia " +
         "são recalculados automaticamente.") +
     (notaPreferencias ? ` ${notaPreferencias}` : "");
-  return { refeicoes, observacoes_nutricionista: observacoes };
+  return { refeicoes: refeicoesComSobremesa, observacoes_nutricionista: observacoes };
 }
 interface TemplateRefeicao {
   nome: string;

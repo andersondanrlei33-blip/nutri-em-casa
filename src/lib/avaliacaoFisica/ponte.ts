@@ -1,0 +1,247 @@
+// ============================================================================
+// ponte.ts
+// Traduz o que o app já extrai hoje de uma foto de avaliação física
+// (AvaliacaoFisicaExtraida, formato simples — ver lib/nutrition/avaliacaoFisica.ts)
+// para o schema rico que o motor de interpretação espera (AvaliacaoFisicaNormalizada).
+//
+// Não existe aqui é a implementação da IA de leitura, só a tradução/adaptação
+// de formato — sem nenhuma decisão clínica (isso continua sendo trabalho do
+// motor, em regras.ts). Qualquer campo que o app não tem hoje entra como
+// null: pela "regra de ouro" do motor (ver regras.ts), a regra que precisar
+// desse campo simplesmente não dispara, em vez de dar erro ou inventar valor.
+// ============================================================================
+
+import type { AvaliacaoFisicaExtraida, Genero, NivelAtividade, ObjetivoNutricional, CondicaoSaude } from "@/types/domain";
+import { classificarPercentualGordura } from "@/lib/nutrition/avaliacaoFisica";
+import { processarAvaliacao } from "./motor";
+import { montarConsultaAvaliacaoFisica } from "./montarConsulta";
+import { BibliotecaClinicaMock } from "./bibliotecaSelector";
+import type { AvaliacaoFisicaNormalizada, Categoria, Objetivo, PerfilPaciente } from "./types";
+// Nota: importa direto de ./motor e ./montarConsulta (não de ./index) pra
+// evitar import circular, já que index.ts reexporta este arquivo.
+
+function mapObjetivo(objetivo: ObjetivoNutricional): Objetivo {
+  switch (objetivo) {
+    case "emagrecimento":
+      return "emagrecimento";
+    case "ganho_massa":
+      return "hipertrofia";
+    case "saude_geral":
+      return "saude";
+    case "performance_esportiva":
+      return "performance";
+    case "manutencao":
+    default:
+      return "manutencao";
+  }
+}
+
+function mapNivelAtividade(nivel: NivelAtividade): PerfilPaciente["nivelAtividadeFisica"] {
+  switch (nivel) {
+    case "sedentario":
+      return "sedentario";
+    case "leve":
+      return "pouco_ativo";
+    case "moderado":
+      return "moderadamente_ativo";
+    case "intenso":
+      return "muito_ativo";
+    case "atleta":
+      return "atleta";
+    default:
+      return null;
+  }
+}
+
+/** O motor só conhece "M"/"F" (nenhuma regra hoje usa esse campo, mas fica
+ *  documentado o critério pra quando alguma regra passar a usar). */
+function mapSexo(genero: Genero): "M" | "F" {
+  return genero === "feminino" ? "F" : "M";
+}
+
+/** Traduz a classificação de 6 níveis já usada no resto do app (Abaixo do
+ *  peso / Peso normal / Sobrepeso / Obesidade grau I/II/III) pros 3 níveis
+ *  que o motor entende. */
+function classificacaoImcParaCategoria(classificacaoImc: string): Categoria {
+  if (classificacaoImc === "Abaixo do peso") return "abaixo";
+  if (classificacaoImc === "Peso normal") return "normal";
+  if (
+    classificacaoImc === "Sobrepeso" ||
+    classificacaoImc === "Obesidade grau I" ||
+    classificacaoImc === "Obesidade grau II" ||
+    classificacaoImc === "Obesidade grau III"
+  ) {
+    return "acima";
+  }
+  return null;
+}
+
+/** Reaproveita a MESMA classificação de % de gordura já usada e exibida em
+ *  outras partes do app (classificarPercentualGordura, Essencial/Atlético/
+ *  Fitness/Aceitável/Acima do recomendado) — nunca uma segunda fonte de
+ *  verdade divergente — só reduz pros 3 níveis que o motor entende. */
+function classificacaoGorduraParaCategoria(percentual: number, genero: Genero): Categoria {
+  const rotulo = classificarPercentualGordura(percentual, genero);
+  if (rotulo === "Essencial" || rotulo === "Atlético") return "abaixo";
+  if (rotulo === "Fitness" || rotulo === "Aceitável") return "normal";
+  return "acima"; // "Acima do recomendado"
+}
+
+export interface DadosConhecidosConsulta {
+  imc: number;
+  classificacaoImc: string;
+  genero: Genero;
+  idade: number;
+  alturaCm: number;
+  pesoKg: number;
+}
+
+/**
+ * Monta o objeto rico que o motor espera a partir do que já temos: os
+ * campos extraídos da foto (dados) + os campos que o próprio app já
+ * calcula/conhece com certeza (imc, classificacaoImc, idade, altura, peso,
+ * gênero — não confiamos nesses vindos da IA, são os mesmos já usados no
+ * resto da consulta). Categorias que dependem de faixa de referência do
+ * aparelho (ex: massaMuscularCategoria) só vêm preenchidas quando o
+ * documento trouxer essa informação explicitamente (ver extrairAvaliacaoFisica) —
+ * senão ficam null e as regras que dependem delas simplesmente não disparam.
+ */
+export function paraAvaliacaoFisicaNormalizada(
+  dados: AvaliacaoFisicaExtraida,
+  conhecidos: DadosConhecidosConsulta
+): AvaliacaoFisicaNormalizada {
+  const aguaCorporalTotalL =
+    dados.aguaCorporalPercentual != null && conhecidos.pesoKg != null
+      ? Math.round(((conhecidos.pesoKg * dados.aguaCorporalPercentual) / 100) * 10) / 10
+      : null;
+
+  return {
+    meta: {
+      tipoAvaliacao: classificarTipoAvaliacao(dados.metodo),
+      aparelhoModelo: dados.metodo,
+      dataAvaliacao: dados.dataAvaliacao ?? new Date().toISOString().slice(0, 10),
+      fonte: "foto",
+    },
+    pacienteSnapshot: {
+      alturaCm: conhecidos.alturaCm,
+      idade: conhecidos.idade,
+      sexo: mapSexo(conhecidos.genero),
+      pesoKg: conhecidos.pesoKg,
+    },
+    composicaoCorporal: {
+      aguaCorporalTotalL: { valor: aguaCorporalTotalL },
+      proteinaKg: { valor: null },
+      mineraisKg: { valor: null },
+      massaGorduraKg: { valor: dados.massaGordaKg },
+      pesoKg: { valor: conhecidos.pesoKg },
+    },
+    musculoGordura: {
+      pesoCategoria: dados.pesoCategoria ?? null,
+      // "massa magra" é a aproximação mais próxima do que temos hoje pra
+      // massa muscular esquelética — o documento pode não separar as duas.
+      massaMuscularEsqueleticaKg: { valor: dados.massaMagraKg },
+      massaMuscularCategoria: dados.massaMuscularCategoria ?? null,
+      massaGorduraCategoria: null,
+    },
+    obesidade: {
+      imc: { valor: conhecidos.imc },
+      imcCategoria: classificacaoImcParaCategoria(conhecidos.classificacaoImc),
+      percentualGordura: { valor: dados.percentualGordura },
+      percentualGorduraCategoria:
+        dados.percentualGordura != null
+          ? classificacaoGorduraParaCategoria(dados.percentualGordura, conhecidos.genero)
+          : null,
+    },
+    segmentar: {
+      // O app ainda não extrai dados por segmento corporal (braço/tronco/
+      // perna) — quando isso existir, popular aqui habilita R2/R3/R9.
+      massaMagra: null,
+      massaGordura: null,
+    },
+    dadosAdicionais: {
+      pontuacaoGeral: { valor: null, max: null },
+      pesoIdealKg: null,
+      controlePesoKg: null,
+      controleGorduraKg: null,
+      controleMuscularKg: null,
+      taxaMetabolicaBasalKcal: dados.tmbMedidoKcal,
+      relacaoCinturaQuadril: { valor: null },
+      nivelGorduraVisceral: { valor: null },
+      grauObesidadePercentual: { valor: null },
+    },
+  };
+}
+
+function classificarTipoAvaliacao(metodo: string | null): AvaliacaoFisicaNormalizada["meta"]["tipoAvaliacao"] {
+  if (!metodo) return "outro";
+  const normalizado = metodo
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+  if (normalizado.includes("inbody")) return "inbody";
+  if (normalizado.includes("dexa")) return "dexa";
+  if (normalizado.includes("dobra") || normalizado.includes("adipometro") || normalizado.includes("pollock")) {
+    return "adipometro";
+  }
+  if (normalizado.includes("bioimped")) return "bioimpedancia_simples";
+  if (normalizado.includes("antropometria")) return "antropometria_manual";
+  return "outro";
+}
+
+export function paraPerfilPaciente(params: {
+  usuarioId: string;
+  objetivo: ObjetivoNutricional;
+  genero: Genero;
+  idade: number;
+  nivelAtividade: NivelAtividade;
+  condicoesSaude: CondicaoSaude[];
+}): PerfilPaciente {
+  return {
+    id: params.usuarioId,
+    objetivo: mapObjetivo(params.objetivo),
+    sexo: mapSexo(params.genero),
+    idade: params.idade,
+    nivelAtividadeFisica: mapNivelAtividade(params.nivelAtividade),
+    condicoesClinicas: params.condicoesSaude,
+  };
+}
+
+/**
+ * Função de conveniência: junta a tradução de formato (acima) + a chamada
+ * ao motor (index.ts) numa única chamada pronta pra usar de dentro da rota
+ * que gera o resultado da consulta. Nunca lança erro — qualquer falha
+ * (motor, biblioteca) resulta em null, e a consulta segue sem esse texto
+ * extra, exatamente como já acontece com a própria extração por IA (ver
+ * extrairAvaliacaoFisica).
+ */
+export async function gerarTextoInterpretacaoAvaliacaoFisica(
+  dados: AvaliacaoFisicaExtraida | null,
+  conhecidos: DadosConhecidosConsulta,
+  perfilParams: {
+    usuarioId: string;
+    objetivo: ObjetivoNutricional;
+    nivelAtividade: NivelAtividade;
+    condicoesSaude: CondicaoSaude[];
+  }
+): Promise<string | null> {
+  if (!dados || dados.percentualGordura == null) return null;
+
+  try {
+    const normalizado = paraAvaliacaoFisicaNormalizada(dados, conhecidos);
+    const perfil = paraPerfilPaciente({
+      usuarioId: perfilParams.usuarioId,
+      objetivo: perfilParams.objetivo,
+      genero: conhecidos.genero,
+      idade: conhecidos.idade,
+      nivelAtividade: perfilParams.nivelAtividade,
+      condicoesSaude: perfilParams.condicoesSaude,
+    });
+    const biblioteca = new BibliotecaClinicaMock();
+    const insights = processarAvaliacao(normalizado, perfil, null);
+    const texto = await montarConsultaAvaliacaoFisica(insights, normalizado, perfil, biblioteca);
+    return texto;
+  } catch (erro) {
+    console.error("Falha ao gerar interpretação da avaliação física, seguindo sem esse texto:", erro);
+    return null;
+  }
+}

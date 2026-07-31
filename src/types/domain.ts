@@ -168,6 +168,13 @@ export interface AvaliacaoNutricional {
   preferencia_sabor: string[];
   frequencia_restaurante: string | null;
   historico_dietetico: string | null;
+  /** Preenchidos só quando nivel_atividade !== "sedentario" (pergunta
+   *  condicional no ConsultaWizard) — null pra quem é sedentário ou pra
+   *  avaliações anteriores a essa coluna. */
+  horario_treino: string | null;
+  /** Se true, mealPlanGenerator.ts inclui refeições de pré-treino/pós-treino
+   *  no plano (categorias "pre_treino"/"pos_treino" da biblioteca). */
+  quer_pre_pos_treino: boolean | null;
   /** Gera aviso automático — ver avaliarMudancaPesoNaoIntencional. */
   perda_peso_nao_intencional: string | null;
   ganho_peso_nao_intencional: string | null;

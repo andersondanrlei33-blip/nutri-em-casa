@@ -1,12 +1,13 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp, ShieldAlert, CheckCircle2, Upload, FileText, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { Card, CardContent } from "@/components/ui/Card";
 import { toast } from "@/components/ui/Toast";
 import { gerarResultadoAvaliacao } from "@/lib/nutrition/calculations";
+import { createClient } from "@/lib/supabase/client";
 import type {
   AvaliacaoNutricional,
   CondicaoSaude,
@@ -80,8 +81,13 @@ const SITUACOES_ESPECIAIS_OPCOES = [
  *  engravidar/amamentar — não exibidas quando o paciente marcou gênero
  *  masculino na pergunta anterior. */
 const OPCOES_SO_GESTACAO = ["Estou grávida", "Estou amamentando"];
-/** Tipos de campo suportados pelo motor de perguntas. */
-type TipoPergunta = "text" | "numero" | "single" | "single_detail" | "multi" | "dropdown";
+/** Tipos de campo suportados pelo motor de perguntas. "arquivo" = upload de
+ *  foto pro bucket avaliacoes-fisicas (ver enviarArquivoAvaliacaoFisica). */
+type TipoPergunta = "text" | "numero" | "single" | "single_detail" | "multi" | "dropdown" | "arquivo";
+/** Tipos de imagem aceitos no upload da avaliação física — restrito a foto
+ *  (não PDF) porque o SDK da Anthropic usado no servidor (^0.27.3) só lê
+ *  blocos de imagem, não de documento. */
+const TIPOS_ARQUIVO_ACEITOS = ["image/jpeg", "image/png", "image/webp"];
 interface Pergunta {
   id: number;
   campo: keyof RespostasConsulta;
@@ -101,6 +107,11 @@ interface Pergunta {
    *  horário de treino / pré-pós-treino, que só fazem sentido pra quem não é
    *  sedentário (ver PERGUNTAS abaixo). */
   condicao?: (respostas: RespostasConsulta) => boolean;
+  /** Quando true, a pergunta é opcional na 1ª consulta mas OBRIGATÓRIA numa
+   *  consulta de retorno (ver variável `retorno` no componente) — hoje só
+   *  usada pela avaliação física, que a nutricionista passou a exigir em
+   *  todo retorno. Diferente de `obrigatoria`, que é estático. */
+  obrigatoriaSeRetorno?: boolean;
 }
 interface RespostasConsulta {
   objetivo: ObjetivoNutricional | "";
@@ -142,6 +153,11 @@ interface RespostasConsulta {
   quer_pre_pos_treino: boolean | null;
   altura_cm: string;
   peso_kg: string;
+  /** Caminho do arquivo no bucket privado avaliacoes-fisicas (ver
+   *  enviarArquivoAvaliacaoFisica) — "" quando nada foi anexado ainda. */
+  avaliacao_fisica_arquivo_url: string;
+  /** Nome original do arquivo, só pra exibição enquanto a pessoa responde. */
+  avaliacao_fisica_arquivo_nome: string;
   situacoes_especiais: string[];
   peso_meta_kg: string;
   perda_peso_nao_intencional: string;
@@ -160,7 +176,8 @@ const INICIAL: RespostasConsulta = {
   horario_mais_fome: [], mastigacao: "", alimento_favorito: "", alimento_rejeitado: "",
   preferencia_sabor: [], frequencia_restaurante: "", historico_dietetico: "", horario_treino: "",
   quer_pre_pos_treino: null, altura_cm: "",
-  peso_kg: "", situacoes_especiais: [], peso_meta_kg: "", perda_peso_nao_intencional: "",
+  peso_kg: "", avaliacao_fisica_arquivo_url: "", avaliacao_fisica_arquivo_nome: "",
+  situacoes_especiais: [], peso_meta_kg: "", perda_peso_nao_intencional: "",
   ganho_peso_nao_intencional: "", como_conheceu: "", observacoes: "",
 };
 const PERGUNTAS: Pergunta[] = [
@@ -222,6 +239,9 @@ const PERGUNTAS: Pergunta[] = [
   { id: 38, campo: "historico_dietetico", texto: "Histórico dietético — conte sobre suas refeições por dia, o que costuma comer e as quantidades.", hint: "Ex: Almoço = 3 colheres de arroz + feijão + filé de tilápia + salada", tipo: "text", obrigatoria: true, placeholder: "Sua resposta" },
   { id: 39, campo: "altura_cm", texto: "Altura", hint: "Selecione na lista", tipo: "dropdown", obrigatoria: true, opcoes: ALTURAS },
   { id: 40, campo: "peso_kg", texto: "Peso atual", hint: "Selecione na lista", tipo: "dropdown", obrigatoria: true, opcoes: PESOS },
+  { id: 90, campo: "avaliacao_fisica_arquivo_url", texto: "Tem uma avaliação física recente (bioimpedância, dobras cutâneas, etc)? Se tiver, envie uma foto dela.",
+    hint: "Opcional na primeira consulta. Em consultas de retorno, vamos pedir uma avaliação atualizada — ela nos ajuda a entender sua composição corporal além do peso na balança.",
+    tipo: "arquivo", obrigatoria: false, obrigatoriaSeRetorno: true },
   { id: 41, campo: "situacoes_especiais", texto: "Alguma dessas situações se aplica a você agora?", hint: "Seleção múltipla", tipo: "multi", obrigatoria: true, opcoes: SITUACOES_ESPECIAIS_OPCOES },
   { id: 42, campo: "peso_meta_kg", texto: "Peso desejado (kg)", tipo: "numero", obrigatoria: false },
   { id: 43, campo: "perda_peso_nao_intencional", texto: "Teve perda de peso recente e não intencional?", tipo: "single_detail", obrigatoria: true, opcoes: ["Não", "Sim"], detalheObrigatorioSe: "Sim", detalhePlaceholder: "Quantos quilos e em quanto tempo?" },
@@ -341,7 +361,7 @@ function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsul
 function escolhasIniciaisDe(respostas: RespostasConsulta): Record<number, string> {
   const escolhas: Record<number, string> = {};
   for (const pergunta of PERGUNTAS) {
-    if (pergunta.tipo === "multi" || pergunta.tipo === "text" || pergunta.tipo === "numero") continue;
+    if (pergunta.tipo === "multi" || pergunta.tipo === "text" || pergunta.tipo === "numero" || pergunta.tipo === "arquivo") continue;
     if (pergunta.campo === "perda_peso_nao_intencional" || pergunta.campo === "ganho_peso_nao_intencional") continue;
     const valor = respostas[pergunta.campo];
     if (pergunta.tipo === "single_detail") {
@@ -365,6 +385,7 @@ function escolhasIniciaisDe(respostas: RespostasConsulta): Record<number, string
 export function ConsultaWizard({
   avaliacaoAnterior,
   perfil,
+  usuarioId,
 }: {
   avaliacaoAnterior: AvaliacaoNutricional | null;
   /** Gênero e data de nascimento vêm do cadastro/"Meu Perfil" — a tela que
@@ -372,6 +393,10 @@ export function ConsultaWizard({
    *  antes de chegar aqui (ver consulta/page.tsx), então não são perguntados
    *  de novo em toda consulta. */
   perfil: { genero: Genero; dataNascimento: string };
+  /** Id do usuário logado — usado só pra montar o caminho do arquivo no
+   *  upload da avaliação física (bucket privado avaliacoes-fisicas, path
+   *  {usuarioId}/{timestamp}-{nome}, mesma convenção de avatares/receitas). */
+  usuarioId: string;
 }) {
   const router = useRouter();
   const retorno = Boolean(avaliacaoAnterior);
@@ -384,6 +409,7 @@ export function ConsultaWizard({
     [respostas]
   );
   const [enviando, setEnviando] = useState(false);
+  const [enviandoArquivo, setEnviandoArquivo] = useState(false);
   const [resultadoFinal, setResultadoFinal] = useState<null | {
     observacoes: string;
     avisos: string[];
@@ -448,20 +474,63 @@ export function ConsultaWizard({
     const diferenca = numeroDaFaixa(respostas.peso_kg) - avaliacaoAnterior.peso_kg;
     return Math.round(diferenca * 10) / 10;
   }, [avaliacaoAnterior, respostas.peso_kg]);
+  /** `obrigatoria` é estático; `obrigatoriaSeRetorno` só vira obrigatório
+   *  numa consulta de retorno (ver Pergunta.obrigatoriaSeRetorno acima). */
+  function ehObrigatoria(p: Pergunta): boolean {
+    return p.obrigatoria || (p.obrigatoriaSeRetorno === true && retorno);
+  }
   function respondida(p: Pergunta): boolean {
     const valor = respostas[p.campo];
+    const obrigatoria = ehObrigatoria(p);
+    if (p.tipo === "arquivo") {
+      if (!obrigatoria) return true;
+      return typeof valor === "string" && valor.trim().length > 0;
+    }
     if (p.tipo === "single_detail") {
       const label = escolhas[p.id];
-      if (!p.obrigatoria) return true;
+      if (!obrigatoria) return true;
       if (!label) return false;
       if (label === p.detalheObrigatorioSe) return typeof valor === "string" && valor.trim().length > 0;
       return true;
     }
-    if (!p.obrigatoria) return true;
+    if (!obrigatoria) return true;
     if (p.tipo === "multi") return Array.isArray(valor) && valor.length > 0;
     if (p.tipo === "single" || p.tipo === "dropdown") return !!escolhas[p.id];
     if (p.tipo === "numero") return valor !== "" && valor !== null && Number(valor) > 0;
     return typeof valor === "string" && valor.trim().length > 0;
+  }
+  /** Faz o upload da foto pro bucket privado avaliacoes-fisicas e guarda o
+   *  caminho/nome no estado de respostas — a leitura por IA e o cruzamento
+   *  com o IMC acontecem no servidor (route.ts), aqui é só o envio do
+   *  arquivo em si. Qualquer falha mostra um toast e deixa a pessoa tentar
+   *  de novo, sem travar o resto da consulta. */
+  async function enviarArquivoAvaliacaoFisica(arquivo: File) {
+    if (!TIPOS_ARQUIVO_ACEITOS.includes(arquivo.type)) {
+      toast.erro("Formato não aceito — envie uma foto em JPG, PNG ou WEBP.");
+      return;
+    }
+    if (arquivo.size > 10 * 1024 * 1024) {
+      toast.erro("Arquivo muito grande — envie uma foto de até 10MB.");
+      return;
+    }
+    setEnviandoArquivo(true);
+    try {
+      const supabase = createClient();
+      const caminho = `${usuarioId}/${Date.now()}-${arquivo.name}`;
+      const { error } = await supabase.storage.from("avaliacoes-fisicas").upload(caminho, arquivo);
+      if (error) throw error;
+      set("avaliacao_fisica_arquivo_url", caminho as never);
+      set("avaliacao_fisica_arquivo_nome", arquivo.name as never);
+      toast.sucesso("Avaliação física anexada!");
+    } catch {
+      toast.erro("Não foi possível enviar o arquivo — tente novamente.");
+    } finally {
+      setEnviandoArquivo(false);
+    }
+  }
+  function removerArquivoAvaliacaoFisica() {
+    set("avaliacao_fisica_arquivo_url", "" as never);
+    set("avaliacao_fisica_arquivo_nome", "" as never);
   }
   function validarPerguntaAtual(): string | null {
     if (!pergunta) return null;
@@ -577,6 +646,8 @@ export function ConsultaWizard({
       perda_peso_nao_intencional: respostas.perda_peso_nao_intencional || null,
       ganho_peso_nao_intencional: respostas.ganho_peso_nao_intencional || null,
       como_conheceu: respostas.como_conheceu || null,
+      avaliacao_fisica_arquivo_url: respostas.avaliacao_fisica_arquivo_url || null,
+      avaliacao_fisica_arquivo_nome: respostas.avaliacao_fisica_arquivo_nome || null,
     };
   }
   async function finalizarConsulta() {
@@ -697,6 +768,7 @@ export function ConsultaWizard({
   const progresso = Math.round(((indice + 1) / perguntasVisiveis.length) * 100);
   const opcaoAtual = escolhas[pergunta.id];
   const mostrarDetalhe = pergunta.tipo === "single_detail" && opcaoAtual === pergunta.detalheObrigatorioSe;
+  const perguntaObrigatoria = ehObrigatoria(pergunta);
   return (
     <div className="mx-auto max-w-xl">
       <div className="mb-5 h-1.5 rounded-full bg-black/10">
@@ -708,8 +780,8 @@ export function ConsultaWizard({
       <Card>
         <CardContent className="py-8 animate-fade-in-up">
           <h2 className="text-base font-semibold leading-snug text-foreground">
-            {pergunta.texto} {pergunta.obrigatoria && <span className="text-danger-500">*</span>}
-            {!pergunta.obrigatoria && <span className="ml-1 text-xs font-normal text-muted">(opcional)</span>}
+            {pergunta.texto} {perguntaObrigatoria && <span className="text-danger-500">*</span>}
+            {!perguntaObrigatoria && <span className="ml-1 text-xs font-normal text-muted">(opcional)</span>}
           </h2>
           {pergunta.hint && <p className="mt-1 text-xs text-muted">{pergunta.hint}</p>}
           <div className="mt-5">
@@ -803,6 +875,50 @@ export function ConsultaWizard({
                 ))}
               </div>
             )}
+            {pergunta.tipo === "arquivo" && (
+              <div>
+                {respostas.avaliacao_fisica_arquivo_nome ? (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+                      <FileText className="h-4 w-4 shrink-0 text-brand-600" />
+                      <span className="truncate">{respostas.avaliacao_fisica_arquivo_nome}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={removerArquivoAvaliacaoFisica}
+                      className="shrink-0 text-muted hover:text-danger-500"
+                      title="Remover"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label
+                    className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center text-sm transition-colors ${
+                      enviandoArquivo ? "border-border text-muted" : "border-brand-300 text-brand-600 hover:bg-brand-50"
+                    }`}
+                  >
+                    {enviandoArquivo ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                    {enviandoArquivo ? "Enviando..." : "Toque para escolher uma foto"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      disabled={enviandoArquivo}
+                      onChange={(e) => {
+                        const arquivo = e.target.files?.[0];
+                        if (arquivo) enviarArquivoAvaliacaoFisica(arquivo);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                )}
+                <p className="mt-2 text-xs text-muted">
+                  Aceita foto em JPG, PNG ou WEBP (ainda não aceita PDF — se seu documento for PDF, tire uma foto da
+                  tela ou do papel impresso).
+                </p>
+              </div>
+            )}
             {pergunta.campo === "peso_meta_kg" && preview?.avisoMetaPeso && (
               <div className="mt-3 flex items-start gap-2 rounded-xl border border-danger-500/30 bg-danger-500/10 px-3 py-2.5 text-xs text-foreground">
                 <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger-500" />
@@ -835,6 +951,29 @@ function RelatorioEmCartoes({
       {relatorio.resumoGeral && (
         <div className="rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
           <p>{relatorio.resumoGeral}</p>
+        </div>
+      )}
+
+      {relatorio.composicaoCorporal && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Composição Corporal</h3>
+          <div className="rounded-xl border border-border bg-white px-4 py-3.5 text-sm text-foreground">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span>
+                <strong>% de gordura:</strong> {relatorio.composicaoCorporal.percentualGordura}%
+                {" "}({relatorio.composicaoCorporal.classificacaoPercentualGordura})
+              </span>
+              {relatorio.composicaoCorporal.massaMagraKg != null && (
+                <span><strong>Massa magra:</strong> {relatorio.composicaoCorporal.massaMagraKg} kg</span>
+              )}
+              {relatorio.composicaoCorporal.massaGordaKg != null && (
+                <span><strong>Massa gorda:</strong> {relatorio.composicaoCorporal.massaGordaKg} kg</span>
+              )}
+            </div>
+            {relatorio.composicaoCorporal.textoComparativo && (
+              <p className="mt-2.5 leading-relaxed text-muted">{relatorio.composicaoCorporal.textoComparativo}</p>
+            )}
+          </div>
         </div>
       )}
 

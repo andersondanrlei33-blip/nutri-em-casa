@@ -52,6 +52,18 @@ const CONDICOES_SAUDE_SLUGS: Record<string, CondicaoSaude> = {
   "Hipertireoidismo": "hipertireoidismo",
   "Colesterol alto": "colesterol_alto",
 };
+/** Caminho inverso do mapa acima — usado só pra pré-preencher a pergunta de
+ *  condições de saúde numa consulta de retorno (o banco guarda o slug, a
+ *  pergunta usa o rótulo). */
+const CONDICOES_SAUDE_LABELS: Record<CondicaoSaude, string> = {
+  diabetes_tipo1: "Diabetes tipo 1",
+  diabetes_tipo2: "Diabetes tipo 2",
+  hipertensao: "Hipertensão",
+  doenca_renal: "Doença renal",
+  hipotireoidismo: "Hipotireoidismo",
+  hipertireoidismo: "Hipertireoidismo",
+  colesterol_alto: "Colesterol alto",
+};
 const DOENCAS_FAMILIARES_OPCOES = [
   "Câncer", "Diabetes", "Doença cardiovascular", "Doenças autoimunes", "Doenças osteoarticulares",
   "Doenças hormonais", "Endometriose", "Hipertensão", "Hipotireoidismo", "Hipertireoidismo",
@@ -212,31 +224,118 @@ function paraLista(texto: string): string[] {
 function numeroDaFaixa(valor: string): number {
   return Number(valor.replace(/[^\d.]/g, ""));
 }
-/** Numa consulta de retorno, pré-preenche os campos que existem tanto na
- *  avaliação anterior quanto no novo formulário — os campos novos (que o
- *  questionário de 40 perguntas trouxe) começam em branco mesmo assim. */
+/** Numa consulta de retorno, pré-preenche TODOS os campos que existem tanto
+ *  na avaliação anterior quanto no formulário atual — não só os básicos
+ *  (peso/altura/idade/gênero), mas a anamnese inteira, pra a pessoa não
+ *  precisar responder de novo o que já respondeu da última vez. Só ficam de
+ *  fora, de propósito:
+ *   - situações especiais (grávida/amamentando/histórico de TA) e as duas
+ *     perguntas de mudança de peso recente: são sobre "agora"/"desde a
+ *     última consulta", então sempre perguntamos de novo em vez de assumir
+ *     que continua igual;
+ *   - observações livres: texto solto que faz mais sentido nascer em
+ *     branco a cada consulta.
+ *  Sono e estresse são guardados no banco só como número (qualidade_sono,
+ *  nivel_estresse), não como o rótulo da pergunta — aqui reconstruímos o
+ *  rótulo mais provável. Nível 4 de estresse e "fumante" têm duas frases
+ *  diferentes que geram o mesmo valor salvo; nesses casos assumimos a
+ *  primeira, e a pessoa corrige com um clique se não bater exatamente. */
 function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsulta {
   const base = { ...INICIAL };
   if (!anterior) return base;
+  const qualidadeSonoLabel =
+    anterior.qualidade_sono === 4 ? "Bom" : anterior.qualidade_sono === 3 ? "Regular" : anterior.qualidade_sono === 2 ? "Ruim" : "";
+  const nivelEstresseLabel =
+    anterior.nivel_estresse === 1
+      ? "Não, nada me afeta."
+      : anterior.nivel_estresse === 4
+        ? "Sim, estressado e muito cansado"
+        : anterior.nivel_estresse === 5
+          ? "Sim, estressado e cansado pela manhã e agitado pela noite"
+          : "";
   return {
     ...base,
     idade: String(anterior.idade),
     genero: anterior.genero,
     objetivo: anterior.objetivo,
+    tipo_suporte_esperado: anterior.tipo_suporte_esperado ?? "",
     tabagismo: anterior.tabagismo ?? "",
     consumo_alcool: anterior.consumo_alcool ?? "",
     nivel_atividade: anterior.nivel_atividade,
-    condicoes_saude: anterior.condicoes_saude,
+    horas_sono: anterior.horas_sono ?? "",
+    qualidade_sono_categoria: qualidadeSonoLabel,
+    insonia: anterior.insonia,
+    medicacao_sono: anterior.medicacao_sono ?? "",
+    disposicao_manha: anterior.disposicao_manha ?? "",
+    disposicao_tarde: anterior.disposicao_tarde ?? "",
+    disposicao_noite: anterior.disposicao_noite ?? "",
+    concentracao: anterior.concentracao ?? "",
+    memoria_recente: anterior.memoria_recente ?? "",
+    memoria_antiga: anterior.memoria_antiga ?? "",
+    nivel_estresse_categoria: nivelEstresseLabel,
+    rotina_trabalho: anterior.rotina_trabalho ?? "",
+    doencas_familiares: anterior.doencas_familiares,
+    condicoes_saude: anterior.condicoes_saude.map((slug) => CONDICOES_SAUDE_LABELS[slug]).filter(Boolean),
     restricoes_alimentares: anterior.restricoes_alimentares.join(", "),
+    historico_cirurgias: anterior.historico_cirurgias ?? "",
     alergias: anterior.alergias.join(", "),
     medicamentos_em_uso: anterior.medicamentos_em_uso.join(", "),
+    suplementos_em_uso: anterior.suplementos_em_uso ?? "",
+    dieta_anterior: anterior.dieta_anterior ?? "",
+    ingestao_agua_copos: anterior.ingestao_agua_copos ?? "",
+    quem_prepara_comida: anterior.quem_prepara_comida ?? "",
+    refeicao_sozinho_ou_acompanhado: anterior.refeicao_sozinho_ou_acompanhado ?? "",
+    horario_mais_fome: anterior.horario_mais_fome,
+    mastigacao: anterior.mastigacao ?? "",
+    alimento_favorito: anterior.preferencias_alimentares[0] ?? "",
+    alimento_rejeitado: anterior.alimentos_evitados[0] ?? "",
+    preferencia_sabor: anterior.preferencia_sabor,
+    frequencia_restaurante: anterior.frequencia_restaurante ?? "",
+    historico_dietetico: anterior.historico_dietetico ?? "",
     altura_cm: `${anterior.altura_cm} cm`,
     peso_kg: `${anterior.peso_kg} kg`,
     peso_meta_kg: anterior.peso_meta_kg != null ? String(anterior.peso_meta_kg) : "",
-    // Sinalizadores de segurança não carregam automaticamente — a situação
-    // pode ter mudado desde a última consulta, então perguntamos de novo.
+    como_conheceu: anterior.como_conheceu ?? "",
+    // Sinalizadores de segurança e mudanças recentes de peso não carregam
+    // automaticamente — a situação pode ter mudado desde a última consulta,
+    // então perguntamos de novo em vez de assumir que continua igual.
     situacoes_especiais: [],
+    perda_peso_nao_intencional: "",
+    ganho_peso_nao_intencional: "",
   };
+}
+/** A partir do estado de respostas já pré-preenchido (ver estadoInicialDe),
+ *  monta o mapa id-da-pergunta -> rótulo exibido, pra que os botões de
+ *  seleção única/dropdown/detalhe já apareçam marcados numa consulta de
+ *  retorno — sem isso, o texto ficava pré-preenchido "por baixo" mas a tela
+ *  não mostrava nenhuma opção destacada, dando a impressão de pergunta em
+ *  branco. Perguntas do tipo "multi" não passam por aqui (usam o array de
+ *  respostas direto). "Mudança de peso recente" fica de fora de propósito,
+ *  pelo mesmo motivo do estadoInicialDe: não é uma resposta antiga, é uma
+ *  pergunta sobre agora. */
+function escolhasIniciaisDe(respostas: RespostasConsulta): Record<number, string> {
+  const escolhas: Record<number, string> = {};
+  for (const pergunta of PERGUNTAS) {
+    if (pergunta.tipo === "multi" || pergunta.tipo === "text" || pergunta.tipo === "numero") continue;
+    if (pergunta.campo === "perda_peso_nao_intencional" || pergunta.campo === "ganho_peso_nao_intencional") continue;
+    const valor = respostas[pergunta.campo];
+    if (pergunta.tipo === "single_detail") {
+      if (!pergunta.detalheObrigatorioSe || !pergunta.opcoes) continue;
+      const temDetalhe = typeof valor === "string" && valor.trim().length > 0;
+      escolhas[pergunta.id] = temDetalhe
+        ? pergunta.detalheObrigatorioSe
+        : (pergunta.opcoes.find((o) => o !== pergunta.detalheObrigatorioSe) ?? pergunta.opcoes[0]);
+      continue;
+    }
+    // single / dropdown
+    if (pergunta.mapa) {
+      const label = Object.entries(pergunta.mapa).find(([, v]) => v === valor)?.[0];
+      if (label) escolhas[pergunta.id] = label;
+    } else if (typeof valor === "string" && valor && pergunta.opcoes?.includes(valor)) {
+      escolhas[pergunta.id] = valor;
+    }
+  }
+  return escolhas;
 }
 export function ConsultaWizard({
   avaliacaoAnterior,
@@ -254,7 +353,7 @@ export function ConsultaWizard({
   const retorno = Boolean(avaliacaoAnterior);
   const [indice, setIndice] = useState(-1); // -1 = intro
   const [respostas, setRespostas] = useState<RespostasConsulta>(() => estadoInicialDe(avaliacaoAnterior));
-  const [escolhas, setEscolhas] = useState<Record<number, string>>({});
+  const [escolhas, setEscolhas] = useState<Record<number, string>>(() => escolhasIniciaisDe(estadoInicialDe(avaliacaoAnterior)));
   const [enviando, setEnviando] = useState(false);
   const [resultadoFinal, setResultadoFinal] = useState<null | {
     observacoes: string;

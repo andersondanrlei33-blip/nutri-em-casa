@@ -287,6 +287,172 @@ function adicionarSobremesaDeFimDeSemana(
 
   return { refeicoes: refeicoesAtualizadas, sobremesaAdicionada: sobremesaEscolhida.nome };
 }
+/** Horário aproximado de cada opção de "horário de treino" (pergunta
+ *  condicional do ConsultaWizard, só exibida pra quem não é sedentário) —
+ *  usado só pra posicionar as refeições de pré/pós-treino no relógio do
+ *  dia; "Varia bastante" usa um horário comum de fim de tarde como
+ *  aproximação razoável, já que não temos um horário fixo declarado. */
+const HORARIO_BASE_TREINO: Record<string, string> = {
+  "Manhã": "07:00",
+  "Tarde": "15:30",
+  "Noite": "19:00",
+  "Varia bastante": "18:00",
+};
+/** Fração da meta calórica diária destinada a cada refeição de treino —
+ *  pré-treino menor e com foco em carboidrato de fácil digestão (energia
+ *  pro treino), pós-treino um pouco maior e com foco em proteína +
+ *  carboidrato (recuperação). Valores moderados e típicos de orientação
+ *  esportiva básica — não substituem uma avaliação de nutrição esportiva
+ *  individualizada, e o app não afirma isso em nenhum texto pro paciente. */
+const PERCENTUAL_PRE_TREINO = 0.1;
+const PERCENTUAL_POS_TREINO = 0.15;
+/** Soma/subtrai minutos a um horário "HH:MM", sem ultrapassar os limites do
+ *  dia (clamp 00:00–23:59) — diferente de somarUmaHora, que só soma 1h de
+ *  forma cíclica (usada só pra sobremesa, onde isso nunca estoura o dia). */
+function ajustarHorario(horario: string, deltaMinutos: number): string {
+  const [horas, minutos] = horario.split(":").map(Number);
+  const totalMinutos = Math.max(0, Math.min(23 * 60 + 59, horas * 60 + (minutos ?? 0) + deltaMinutos));
+  const h = Math.floor(totalMinutos / 60);
+  const m = totalMinutos % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+interface ResultadoPreEPosTreino {
+  refeicoes: RefeicaoGerada[];
+  incluido: boolean;
+}
+/**
+ * Insere refeições de pré-treino e pós-treino em todos os 7 dias do plano,
+ * quando o paciente treina (nivel_atividade != sedentario — condição da
+ * própria pergunta no ConsultaWizard) e pediu explicitamente por elas
+ * (quer_pre_pos_treino). Posicionadas em torno do horário de treino
+ * declarado (ver HORARIO_BASE_TREINO). Como a consulta não pergunta QUAIS
+ * dias a pessoa treina, aplicamos em todos os dias — quem treina só em
+ * dias específicos pode remover manualmente as refeições que não se
+ * aplicam pela tela de Plano Alimentar.
+ *
+ * As calorias de cada refeição vêm de uma fração fixa da meta diária (ver
+ * PERCENTUAL_PRE_TREINO/POS_TREINO) — nunca aumentam a meta calórica do
+ * dia: as demais refeições daquele dia são reduzidas proporcionalmente
+ * pra abrir espaço, mesmo princípio já usado pra sobremesa de fim de
+ * semana, mas dividido entre TODAS as refeições do dia (não só uma), já
+ * que pré/pós-treino são refeições de verdade, não um extra pequeno.
+ * Decisão 100% do código, nunca da IA.
+ */
+function adicionarPreEPosTreino(
+  refeicoes: RefeicaoGerada[],
+  avaliacao: AvaliacaoNutricional,
+  receitasDisponiveis: Receita[],
+  filtro: FiltroReceitas
+): ResultadoPreEPosTreino {
+  if (!avaliacao.quer_pre_pos_treino) return { refeicoes, incluido: false };
+
+  const horarioBase = HORARIO_BASE_TREINO[avaliacao.horario_treino ?? ""] ?? HORARIO_BASE_TREINO["Varia bastante"];
+  const horarioPre = ajustarHorario(horarioBase, -45);
+  const horarioPos = ajustarHorario(horarioBase, 45);
+
+  const caloriasPreAlvo = Math.round(avaliacao.meta_calorica * PERCENTUAL_PRE_TREINO);
+  const caloriasPosAlvo = Math.round(avaliacao.meta_calorica * PERCENTUAL_POS_TREINO);
+
+  const candidatasPre = filtrarReceitasCompativeis(receitasDisponiveis, "pre_treino", filtro);
+  const candidatasPos = filtrarReceitasCompativeis(receitasDisponiveis, "pos_treino", filtro);
+  // Sem nenhuma receita segura nas duas categorias, não há o que inserir —
+  // melhor não adicionar nada do que escrever uma descrição de texto livre
+  // pra uma refeição de treino, que tem mais chance de errar a mão em
+  // proteína/carboidrato do que uma refeição comum.
+  if (candidatasPre.length === 0 && candidatasPos.length === 0) return { refeicoes, incluido: false };
+
+  const usadasPre = new Set<string>();
+  const usadasPos = new Set<string>();
+  const refeicoesFinais: RefeicaoGerada[] = [];
+  let incluido = false;
+
+  for (const dia of DIAS) {
+    const refeicoesDoDia = refeicoes.filter((r) => r.dia_semana === dia);
+    const somaCaloriasDia = refeicoesDoDia.reduce((soma, r) => soma + r.calorias, 0);
+    const novasDoDia: RefeicaoGerada[] = [];
+    let caloriasReservadas = 0;
+
+    const metasPre: MetasRefeicao = {
+      calorias: caloriasPreAlvo,
+      proteinaG: Math.round(avaliacao.meta_proteina_g * PERCENTUAL_PRE_TREINO),
+      carboidratoG: Math.round(avaliacao.meta_carboidrato_g * PERCENTUAL_PRE_TREINO),
+      gorduraG: Math.round(avaliacao.meta_gordura_g * PERCENTUAL_PRE_TREINO),
+    };
+    const escolhidaPre = escolherReceita(candidatasPre, metasPre, usadasPre);
+    if (escolhidaPre) {
+      usadasPre.add(escolhidaPre.id);
+      const escala = Math.min(2, Math.max(0.5, escolhidaPre.calorias > 0 ? caloriasPreAlvo / escolhidaPre.calorias : 1));
+      const calorias = Math.round(escolhidaPre.calorias * escala);
+      novasDoDia.push({
+        dia_semana: dia,
+        nome_refeicao: escolhidaPre.nome,
+        horario: horarioPre,
+        categoria: "pre_treino",
+        descricao: escolhidaPre.descricao ?? escolhidaPre.nome,
+        calorias,
+        proteina_g: Math.round(escolhidaPre.proteina_g * escala),
+        carboidrato_g: Math.round(escolhidaPre.carboidrato_g * escala),
+        gordura_g: Math.round(escolhidaPre.gordura_g * escala),
+        receita_id: escolhidaPre.id,
+        quantidade_porcoes: Math.round(escala * escolhidaPre.porcoes * 100) / 100,
+      });
+      caloriasReservadas += calorias;
+      incluido = true;
+    }
+
+    const metasPos: MetasRefeicao = {
+      calorias: caloriasPosAlvo,
+      proteinaG: Math.round(avaliacao.meta_proteina_g * PERCENTUAL_POS_TREINO),
+      carboidratoG: Math.round(avaliacao.meta_carboidrato_g * PERCENTUAL_POS_TREINO),
+      gorduraG: Math.round(avaliacao.meta_gordura_g * PERCENTUAL_POS_TREINO),
+    };
+    const escolhidaPos = escolherReceita(candidatasPos, metasPos, usadasPos);
+    if (escolhidaPos) {
+      usadasPos.add(escolhidaPos.id);
+      const escala = Math.min(2, Math.max(0.5, escolhidaPos.calorias > 0 ? caloriasPosAlvo / escolhidaPos.calorias : 1));
+      const calorias = Math.round(escolhidaPos.calorias * escala);
+      novasDoDia.push({
+        dia_semana: dia,
+        nome_refeicao: escolhidaPos.nome,
+        horario: horarioPos,
+        categoria: "pos_treino",
+        descricao: escolhidaPos.descricao ?? escolhidaPos.nome,
+        calorias,
+        proteina_g: Math.round(escolhidaPos.proteina_g * escala),
+        carboidrato_g: Math.round(escolhidaPos.carboidrato_g * escala),
+        gordura_g: Math.round(escolhidaPos.gordura_g * escala),
+        receita_id: escolhidaPos.id,
+        quantidade_porcoes: Math.round(escala * escolhidaPos.porcoes * 100) / 100,
+      });
+      caloriasReservadas += calorias;
+      incluido = true;
+    }
+
+    if (novasDoDia.length === 0 || somaCaloriasDia <= 0) {
+      // Nada seguro pra inserir nesse dia (ou nada pra reduzir proporcionalmente)
+      // — mantém as refeições originais daquele dia intactas.
+      refeicoesFinais.push(...refeicoesDoDia);
+      continue;
+    }
+
+    // Reduz as refeições já existentes daquele dia, proporcionalmente ao
+    // peso de cada uma, pra abrir espaço pras novas sem estourar a meta
+    // calórica diária.
+    const fatorReducao = Math.max(0, (somaCaloriasDia - caloriasReservadas) / somaCaloriasDia);
+    const refeicoesAjustadas = refeicoesDoDia.map((r) => ({
+      ...r,
+      calorias: Math.round(r.calorias * fatorReducao),
+      proteina_g: Math.round(r.proteina_g * fatorReducao),
+      carboidrato_g: Math.round(r.carboidrato_g * fatorReducao),
+      gordura_g: Math.round(r.gordura_g * fatorReducao),
+      quantidade_porcoes: Math.round((r.quantidade_porcoes ?? 1) * fatorReducao * 100) / 100,
+    }));
+
+    refeicoesFinais.push(...refeicoesAjustadas, ...novasDoDia);
+  }
+
+  return { refeicoes: refeicoesFinais, incluido };
+}
 interface CandidataResumo {
   id: string;
   nome: string;
@@ -294,13 +460,6 @@ interface CandidataResumo {
   proteina_g: number;
   carboidrato_g: number;
   gordura_g: number;
-}
-interface NotaPreferencias {
-  texto: string | null;
-  /** Preferências que NÃO apareceram em nenhuma refeição real do plano —
-   *  usado por removerMencoesDePreferencias pra cortar qualquer frase que a
-   *  IA tenha escrito por conta própria sobre elas (ver função abaixo). */
-  preferenciasNaoAtendidas: string[];
 }
 /**
  * Confere se as preferências alimentares do paciente REALMENTE aparecem em
@@ -314,6 +473,13 @@ interface NotaPreferencias {
  * plano, o próprio código escreve a explicação, sugerindo uma alternativa
  * segura da biblioteca quando existir uma.
  */
+interface NotaPreferencias {
+  texto: string | null;
+  /** Preferências que NÃO apareceram em nenhuma refeição real do plano —
+   *  usado por removerMencoesDePreferencias pra cortar qualquer frase que a
+   *  IA tenha escrito por conta própria sobre elas (ver função abaixo). */
+  preferenciasNaoAtendidas: string[];
+}
 function notaSobrePreferenciasNaoAtendidas(
   preferenciasAlimentares: string[],
   refeicoes: RefeicaoGerada[],
@@ -586,11 +752,20 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
     }
     return { ...refeicao, receita_id: receitaIdValido, quantidade_porcoes: quantidadePorcoes };
   });
+  // Insere pré/pós-treino (quando pedido) ANTES da sobremesa de fim de
+  // semana, porque redistribui calorias em todos os dias — incluindo o
+  // jantar de sábado, que a sobremesa usa como referência logo em seguida.
+  const { refeicoes: refeicoesComTreino, incluido: preTreinoIncluido } = adicionarPreEPosTreino(
+    refeicoesValidadas,
+    avaliacao,
+    receitasDisponiveis,
+    filtro
+  );
   // Antes de checar quais preferências ficaram sem atender, dá a chance de
   // uma delas virar a sobremesa de sábado (extra depois do jantar, nunca no
   // lugar dele) — só quando bate com uma sobremesa segura da biblioteca.
   const { refeicoes: refeicoesComSobremesa } = adicionarSobremesaDeFimDeSemana(
-    refeicoesValidadas,
+    refeicoesComTreino,
     avaliacao,
     receitasDisponiveis,
     filtro
@@ -609,7 +784,10 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
     plano.observacoes_nutricionista,
     preferenciasNaoAtendidas
   );
-  const observacoesFinal = [observacoesIALimpas, notaPreferencias].filter(Boolean).join(" ");
+  const notaTreino = preTreinoIncluido
+    ? "Incluímos refeições de pré-treino e pós-treino no seu plano, posicionadas em torno do horário de treino que você informou."
+    : null;
+  const observacoesFinal = [observacoesIALimpas, notaTreino, notaPreferencias].filter(Boolean).join(" ");
   return { refeicoes: refeicoesComSobremesa, observacoes_nutricionista: observacoesFinal };
 }
 /**
@@ -675,10 +853,20 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
       }
     });
   }
-  // Mesma lógica do caminho com IA: antes de checar preferências sem
-  // atender, dá a chance de uma virar a sobremesa de sábado.
-  const { refeicoes: refeicoesComSobremesa } = adicionarSobremesaDeFimDeSemana(
+  // Mesma lógica do caminho com IA: insere pré/pós-treino (quando pedido)
+  // antes da sobremesa de fim de semana, já que redistribui calorias em
+  // todos os dias, incluindo o jantar de sábado que a sobremesa usa como
+  // referência logo em seguida.
+  const { refeicoes: refeicoesComTreino, incluido: preTreinoIncluido } = adicionarPreEPosTreino(
     refeicoes,
+    avaliacao,
+    receitasDisponiveis,
+    filtro
+  );
+  // Antes de checar preferências sem atender, dá a chance de uma virar a
+  // sobremesa de sábado.
+  const { refeicoes: refeicoesComSobremesa } = adicionarSobremesaDeFimDeSemana(
+    refeicoesComTreino,
     avaliacao,
     receitasDisponiveis,
     filtro
@@ -700,6 +888,10 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
         "manualmente pela lista de Receitas quando adicionarmos mais opções para o seu perfil."
       : " Troque qualquer refeição pela biblioteca de receitas a qualquer momento — os valores nutricionais do dia " +
         "são recalculados automaticamente.") +
+    (preTreinoIncluido
+      ? " Incluímos refeições de pré-treino e pós-treino no seu plano, posicionadas em torno do horário de treino " +
+        "que você informou."
+      : "") +
     (notaPreferencias ? ` ${notaPreferencias}` : "");
   return { refeicoes: refeicoesComSobremesa, observacoes_nutricionista: observacoes };
 }

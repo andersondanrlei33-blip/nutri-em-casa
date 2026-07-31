@@ -278,3 +278,549 @@ export function ConsultaWizard({
     }
     return pergunta.opcoes;
   }, [pergunta, respostas.genero]);
+  const podeVerPreview =
+    Number(respostas.peso_kg && numeroDaFaixa(respostas.peso_kg)) > 0 &&
+    Number(respostas.altura_cm && numeroDaFaixa(respostas.altura_cm)) > 0 &&
+    Number(respostas.idade) > 0 &&
+    !!respostas.genero;
+  const preview = useMemo(() => {
+    if (!podeVerPreview) return null;
+    try {
+      return gerarResultadoAvaliacao({
+        pesoKg: numeroDaFaixa(respostas.peso_kg),
+        alturaCm: numeroDaFaixa(respostas.altura_cm),
+        idade: Number(respostas.idade),
+        genero: respostas.genero as Genero,
+        nivelAtividade: (respostas.nivel_atividade || "leve") as NivelAtividade,
+        objetivo: (respostas.objetivo || "manutencao") as ObjetivoNutricional,
+        gestante: respostas.situacoes_especiais.includes("Estou grávida"),
+        lactante: respostas.situacoes_especiais.includes("Estou amamentando"),
+        historicoTranstornoAlimentar: respostas.situacoes_especiais.includes("Tenho ou já tive transtorno alimentar"),
+        condicoesSaude: respostas.condicoes_saude.map((l) => CONDICOES_SAUDE_SLUGS[l]).filter(Boolean) as CondicaoSaude[],
+        restricoesAlimentares: paraLista(respostas.restricoes_alimentares),
+        pesoMetaKg: respostas.peso_meta_kg ? Number(respostas.peso_meta_kg) : null,
+      });
+    } catch {
+      return null;
+    }
+  }, [respostas, podeVerPreview]);
+  const diffPeso = useMemo(() => {
+    if (!avaliacaoAnterior || !respostas.peso_kg) return null;
+    const diferenca = numeroDaFaixa(respostas.peso_kg) - avaliacaoAnterior.peso_kg;
+    return Math.round(diferenca * 10) / 10;
+  }, [avaliacaoAnterior, respostas.peso_kg]);
+  function respondida(p: Pergunta): boolean {
+    const valor = respostas[p.campo];
+    if (p.tipo === "single_detail") {
+      const label = escolhas[p.id];
+      if (!p.obrigatoria) return true;
+      if (!label) return false;
+      if (label === p.detalheObrigatorioSe) return typeof valor === "string" && valor.trim().length > 0;
+      return true;
+    }
+    if (!p.obrigatoria) return true;
+    if (p.tipo === "multi") return Array.isArray(valor) && valor.length > 0;
+    if (p.tipo === "single" || p.tipo === "dropdown") return !!escolhas[p.id];
+    if (p.tipo === "numero") return valor !== "" && valor !== null && Number(valor) > 0;
+    return typeof valor === "string" && valor.trim().length > 0;
+  }
+  function validarPerguntaAtual(): string | null {
+    if (!pergunta) return null;
+    if (pergunta.campo === "idade" && respostas.idade && Number(respostas.idade) < 18) {
+      return "O Nutri em Casa é destinado a maiores de 18 anos. Menores de idade devem buscar acompanhamento nutricional presencial com um profissional especializado.";
+    }
+    if (!respondida(pergunta)) {
+      return pergunta.tipo === "multi" ? "Selecione ao menos uma opção pra continuar." : "Essa pergunta é obrigatória — responda pra continuar.";
+    }
+    return null;
+  }
+  function avancar() {
+    const erro = validarPerguntaAtual();
+    if (erro) {
+      toast.erro(erro);
+      return;
+    }
+    if (indice + 1 >= PERGUNTAS.length) {
+      finalizarConsulta();
+      return;
+    }
+    setIndice((i) => i + 1);
+  }
+  function voltar() {
+    setIndice((i) => Math.max(-1, i - 1));
+  }
+  function escolherSingle(p: Pergunta, label: string) {
+    setEscolhas((prev) => ({ ...prev, [p.id]: label }));
+    const valorReal = p.mapa ? p.mapa[label] : label;
+    // Gênero masculino não deveria carregar respostas de gravidez/amamentação
+    // de uma tentativa anterior — limpa junto, sem esperar o paciente voltar
+    // na pergunta de situações especiais pra corrigir manualmente.
+    if (p.campo === "genero" && valorReal === "masculino") {
+      setRespostas((prev) => ({
+        ...prev,
+        genero: valorReal as Genero,
+        situacoes_especiais: prev.situacoes_especiais.filter((s) => !OPCOES_SO_GESTACAO.includes(s)),
+      }));
+      return;
+    }
+    set(p.campo, valorReal as never);
+  }
+  function escolherSingleDetail(p: Pergunta, label: string) {
+    setEscolhas((prev) => ({ ...prev, [p.id]: label }));
+    if (label !== p.detalheObrigatorioSe) set(p.campo, "" as never);
+  }
+  function escolherMulti(p: Pergunta, label: string, marcado: boolean) {
+    const opcaoNenhuma = p.opcoes?.find((o) => o.toLowerCase().startsWith("nenhuma"));
+    setRespostas((prev) => {
+      const atual = (prev[p.campo] as string[]) ?? [];
+      let novo: string[];
+      if (marcado) {
+        if (opcaoNenhuma && label === opcaoNenhuma) {
+          novo = [label];
+        } else {
+          novo = [...atual.filter((v) => v !== opcaoNenhuma), label];
+        }
+      } else {
+        novo = atual.filter((v) => v !== label);
+      }
+      return { ...prev, [p.campo]: novo };
+    });
+  }
+  /** Monta o payload pra API a partir do estado de respostas — traduz rótulos
+   *  em valores reais, mescla campos correlatos (ex: alimento favorito entra
+   *  na mesma lista de preferências usada pelo gerador de plano) e converte
+   *  os campos "single_detail" (Não/Sim + detalhe) em texto simples. */
+  function montarPayload() {
+    const preferenciasAlimentares = [respostas.alimento_favorito].filter((s) => s.trim());
+    const alimentosEvitados = [respostas.alimento_rejeitado].filter((s) => s.trim());
+    const medicamentos = paraLista(respostas.medicamentos_em_uso);
+    if (respostas.medicacao_sono.trim()) medicamentos.push(respostas.medicacao_sono.trim());
+    return {
+      peso_kg: numeroDaFaixa(respostas.peso_kg),
+      altura_cm: numeroDaFaixa(respostas.altura_cm),
+      idade: Number(respostas.idade),
+      genero: respostas.genero as Genero,
+      nivel_atividade: respostas.nivel_atividade as NivelAtividade,
+      objetivo: respostas.objetivo as ObjetivoNutricional,
+      peso_meta_kg: respostas.peso_meta_kg ? Number(respostas.peso_meta_kg) : null,
+      restricoes_alimentares: paraLista(respostas.restricoes_alimentares),
+      alergias: paraLista(respostas.alergias),
+      condicoes_saude: respostas.condicoes_saude.map((l) => CONDICOES_SAUDE_SLUGS[l]).filter(Boolean),
+      condicoes_saude_outras: null as string | null,
+      medicamentos_em_uso: medicamentos,
+      consumo_alcool: respostas.consumo_alcool as ConsumoAlcool,
+      tabagismo: respostas.tabagismo as StatusTabagismo,
+      refeicoes_por_dia: 4,
+      preferencias_alimentares: preferenciasAlimentares,
+      alimentos_evitados: alimentosEvitados,
+      qualidade_sono: respostas.qualidade_sono_categoria === "Bom" ? 4 : respostas.qualidade_sono_categoria === "Regular" ? 3 : respostas.qualidade_sono_categoria === "Ruim" ? 2 : null,
+      nivel_estresse:
+        respostas.nivel_estresse_categoria === "Não, nada me afeta." ? 1 :
+        respostas.nivel_estresse_categoria === "Sim, estressado e cansado pela manhã e agitado pela noite" ? 5 :
+        respostas.nivel_estresse_categoria ? 4 : null,
+      observacoes: respostas.observacoes || null,
+      gestante: respostas.situacoes_especiais.includes("Estou grávida"),
+      lactante: respostas.situacoes_especiais.includes("Estou amamentando"),
+      historico_transtorno_alimentar: respostas.situacoes_especiais.includes("Tenho ou já tive transtorno alimentar"),
+      profissao: null,
+      tipo_suporte_esperado: respostas.tipo_suporte_esperado || null,
+      horas_sono: respostas.horas_sono || null,
+      insonia: respostas.insonia,
+      medicacao_sono: respostas.medicacao_sono || null,
+      disposicao_manha: respostas.disposicao_manha || null,
+      disposicao_tarde: respostas.disposicao_tarde || null,
+      disposicao_noite: respostas.disposicao_noite || null,
+      concentracao: respostas.concentracao || null,
+      memoria_recente: respostas.memoria_recente || null,
+      memoria_antiga: respostas.memoria_antiga || null,
+      rotina_trabalho: respostas.rotina_trabalho || null,
+      doencas_familiares: respostas.doencas_familiares,
+      historico_cirurgias: respostas.historico_cirurgias || null,
+      suplementos_em_uso: respostas.suplementos_em_uso || null,
+      dieta_anterior: respostas.dieta_anterior || null,
+      ingestao_agua_copos: respostas.ingestao_agua_copos || null,
+      quem_prepara_comida: respostas.quem_prepara_comida || null,
+      refeicao_sozinho_ou_acompanhado: respostas.refeicao_sozinho_ou_acompanhado || null,
+      horario_mais_fome: respostas.horario_mais_fome,
+      mastigacao: respostas.mastigacao || null,
+      preferencia_sabor: respostas.preferencia_sabor,
+      frequencia_restaurante: respostas.frequencia_restaurante || null,
+      historico_dietetico: respostas.historico_dietetico || null,
+      perda_peso_nao_intencional: respostas.perda_peso_nao_intencional || null,
+      ganho_peso_nao_intencional: respostas.ganho_peso_nao_intencional || null,
+      como_conheceu: respostas.como_conheceu || null,
+    };
+  }
+  async function finalizarConsulta() {
+    setEnviando(true);
+    try {
+      const resposta = await fetch("/api/gerar-plano", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(montarPayload()),
+      });
+      const dados = await resposta.json();
+      if (!resposta.ok) throw new Error(dados.erro ?? "Erro ao gerar o plano.");
+      setResultadoFinal({
+        observacoes: dados.observacoesNutricionista,
+        avisos: dados.avisos ?? [],
+        resumo: dados.resumoConsulta ?? "",
+        avisoMetaPeso: dados.avisoMetaPeso ?? null,
+        relatorio: dados.relatorio ?? null,
+      });
+      toast.sucesso("Sua consulta foi concluída com sucesso!");
+    } catch (erro) {
+      toast.erro(erro instanceof Error ? erro.message : "Erro inesperado.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+  if (resultadoFinal) {
+    return (
+      <Card className="mx-auto max-w-xl animate-fade-in-up">
+        <CardContent className="text-center py-10">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
+            <Stethoscope className="h-6 w-6 text-brand-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-foreground">
+            {retorno ? "Consulta de retorno concluída!" : "Consulta concluída!"}
+          </h2>
+          {retorno && diffPeso !== null && diffPeso !== 0 && (
+            <p
+              className={`mt-2 inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-medium ${
+                diffPeso < 0 ? "bg-success-500/10 text-success-500" : "bg-brand-50 text-brand-700"
+              }`}
+            >
+              {diffPeso < 0 ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+              {diffPeso < 0
+                ? `Você perdeu ${Math.abs(diffPeso)} kg desde a última consulta`
+                : `Você ganhou ${diffPeso} kg desde a última consulta`}
+            </p>
+          )}
+          {resultadoFinal.avisoMetaPeso && (
+            <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-danger-500/30 bg-danger-500/10 px-4 py-3 text-left text-sm text-foreground">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger-500" />
+              <p>{resultadoFinal.avisoMetaPeso}</p>
+            </div>
+          )}
+          {preview && (
+            <div className="mt-4 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
+              <Metrica label="IMC" valor={preview.imc.toString()} sub={preview.classificacaoImc} />
+              <Metrica label="TMB" valor={`${preview.tmb} kcal`} />
+              <Metrica label="TDEE" valor={`${preview.tdee} kcal`} />
+              <Metrica label="Meta calórica" valor={`${preview.metaCalorica} kcal`} />
+            </div>
+          )}
+          {resultadoFinal.relatorio ? (
+            <RelatorioEmCartoes relatorio={resultadoFinal.relatorio} nomePaciente={nomePaciente} />
+          ) : (
+            resultadoFinal.resumo && (
+              <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-left text-sm leading-relaxed text-foreground">
+                {resultadoFinal.resumo.split("\n\n").map((paragrafo, i) => (
+                  <p key={i}>{paragrafo}</p>
+                ))}
+              </div>
+            )
+          )}
+          <p className="mt-5 text-sm text-muted">{resultadoFinal.observacoes}</p>
+          {retorno && (
+            <p className="mt-2 text-xs text-muted">
+              Seu plano alimentar anterior foi substituído por um novo, ajustado a esses dados.
+            </p>
+          )}
+          <Button className="mt-6" onClick={() => router.push("/plano")}>
+            Ver meu plano alimentar
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  // ---- Tela de intro ----
+  if (indice === -1) {
+    return (
+      <div className="mx-auto max-w-xl">
+        <Card>
+          <CardContent className="py-10 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
+              <Stethoscope className="h-6 w-6 text-brand-600" />
+            </div>
+            <h2 className="text-lg font-semibold text-foreground">
+              {retorno ? "Consulta de Retorno" : "Consulta Nutricional"}
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              Uma pergunta por vez, baseada na anamnese completa de uma nutricionista. As com{" "}
+              <span className="text-danger-500 font-medium">*</span> são obrigatórias — o resto você pode deixar em branco.
+            </p>
+            <Button className="mt-6" onClick={() => setIndice(0)}>
+              Começar consulta
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  if (!pergunta) return null;
+  const progresso = Math.round(((indice + 1) / PERGUNTAS.length) * 100);
+  const opcaoAtual = escolhas[pergunta.id];
+  const mostrarDetalhe = pergunta.tipo === "single_detail" && opcaoAtual === pergunta.detalheObrigatorioSe;
+  return (
+    <div className="mx-auto max-w-xl">
+      <div className="mb-5 h-1.5 rounded-full bg-black/10">
+        <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${progresso}%` }} />
+      </div>
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-600">
+        Pergunta {indice + 1} de {PERGUNTAS.length}
+      </p>
+      <Card>
+        <CardContent className="py-8 animate-fade-in-up">
+          <h2 className="text-base font-semibold leading-snug text-foreground">
+            {pergunta.texto} {pergunta.obrigatoria && <span className="text-danger-500">*</span>}
+            {!pergunta.obrigatoria && <span className="ml-1 text-xs font-normal text-muted">(opcional)</span>}
+          </h2>
+          {pergunta.hint && <p className="mt-1 text-xs text-muted">{pergunta.hint}</p>}
+          <div className="mt-5">
+            {pergunta.tipo === "text" && (
+              <Textarea
+                placeholder={pergunta.placeholder}
+                value={(respostas[pergunta.campo] as string) ?? ""}
+                onChange={(e) => set(pergunta.campo, e.target.value as never)}
+              />
+            )}
+            {pergunta.tipo === "numero" && (
+              <Input
+                type="number"
+                min={pergunta.campo === "idade" ? 18 : 1}
+                step={pergunta.campo === "peso_meta_kg" ? "0.1" : "1"}
+                value={(respostas[pergunta.campo] as string) ?? ""}
+                onChange={(e) => set(pergunta.campo, e.target.value as never)}
+              />
+            )}
+            {pergunta.tipo === "dropdown" && (
+              <Select
+                value={opcaoAtual ?? ""}
+                onChange={(e) => escolherSingle(pergunta, e.target.value)}
+              >
+                <option value="" disabled>Selecione...</option>
+                {opcoesPergunta?.map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </Select>
+            )}
+            {pergunta.tipo === "single" && (
+              <div className="flex flex-col gap-2">
+                {opcoesPergunta?.map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    onClick={() => escolherSingle(pergunta, o)}
+                    className={`rounded-xl border px-4 py-2.5 text-left text-sm transition-colors ${
+                      opcaoAtual === o
+                        ? "border-brand-500 bg-brand-50 font-medium text-brand-700"
+                        : "border-border bg-white text-foreground hover:bg-black/[0.02]"
+                    }`}
+                  >
+                    {o}
+                  </button>
+                ))}
+              </div>
+            )}
+            {pergunta.tipo === "single_detail" && (
+              <>
+                <div className="flex flex-col gap-2">
+                  {opcoesPergunta?.map((o) => (
+                    <button
+                      key={o}
+                      type="button"
+                      onClick={() => escolherSingleDetail(pergunta, o)}
+                      className={`rounded-xl border px-4 py-2.5 text-left text-sm transition-colors ${
+                        opcaoAtual === o
+                          ? "border-brand-500 bg-brand-50 font-medium text-brand-700"
+                          : "border-border bg-white text-foreground hover:bg-black/[0.02]"
+                      }`}
+                    >
+                      {o}
+                    </button>
+                  ))}
+                </div>
+                {mostrarDetalhe && (
+                  <div className="mt-3">
+                    <Textarea
+                      placeholder={pergunta.detalhePlaceholder ?? "Descreva..."}
+                      value={(respostas[pergunta.campo] as string) ?? ""}
+                      onChange={(e) => set(pergunta.campo, e.target.value as never)}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+            {pergunta.tipo === "multi" && (
+              <div className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-white p-3 sm:grid-cols-2 max-h-72 overflow-y-auto">
+                {opcoesPergunta?.map((o) => (
+                  <label key={o} htmlFor={`q${pergunta.id}-${o}`} className="flex cursor-pointer items-center gap-2.5 text-sm text-foreground">
+                    <input
+                      id={`q${pergunta.id}-${o}`}
+                      type="checkbox"
+                      checked={((respostas[pergunta.campo] as string[]) ?? []).includes(o)}
+                      onChange={(e) => escolherMulti(pergunta, o, e.target.checked)}
+                      className="h-4 w-4 rounded border-border text-brand-500 focus:ring-2 focus:ring-brand-400"
+                    />
+                    {o}
+                  </label>
+                ))}
+              </div>
+            )}
+            {pergunta.campo === "peso_meta_kg" && preview?.avisoMetaPeso && (
+              <div className="mt-3 flex items-start gap-2 rounded-xl border border-danger-500/30 bg-danger-500/10 px-3 py-2.5 text-xs text-foreground">
+                <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger-500" />
+                {preview.avisoMetaPeso}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      <div className="mt-5 flex items-center justify-between">
+        <Button variante="secundaria" onClick={voltar}>
+          <ChevronLeft className="h-4 w-4" /> Voltar
+        </Button>
+        <Button onClick={avancar} carregando={enviando}>
+          {indice + 1 >= PERGUNTAS.length ? (enviando ? "Gerando seu plano..." : "Finalizar consulta") : (
+            <>Próxima <ChevronRight className="h-4 w-4" /></>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+function RelatorioEmCartoes({
+  relatorio,
+  nomePaciente,
+}: {
+  relatorio: RelatorioConsulta;
+  nomePaciente?: string | null;
+}) {
+  return (
+    <div className="mt-4 space-y-4 text-left">
+      {relatorio.resumoGeral && (
+        <div className="rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
+          <p>{relatorio.resumoGeral}</p>
+        </div>
+      )}
+
+      {relatorio.pontosFortes.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-600">
+            O que você já faz muito bem
+          </h3>
+          <ul className="space-y-2">
+            {relatorio.pontosFortes.map((texto, i) => (
+              <li key={i} className="flex items-start gap-2 rounded-xl bg-brand-50 px-4 py-2.5 text-sm text-foreground">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+                <span>{texto}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {relatorio.pontosAtencao.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Pontos que merecem mais atenção
+          </h3>
+          <ul className="space-y-1.5">
+            {relatorio.pontosAtencao.map((ponto) => (
+              <li key={ponto.chave} className="flex items-center gap-2.5 rounded-lg bg-amber-50 px-3.5 py-2 text-sm text-foreground">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-400 text-[11px] font-bold text-white">
+                  {ponto.prioridade}
+                </span>
+                {ponto.titulo}
+                {ponto.categoria === "condicao_saude" && nomePaciente && (
+                  <span className="text-muted"> — {nomePaciente}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {relatorio.condicoesSaude.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Condições de Saúde</h3>
+          <div className="space-y-2">
+            {relatorio.condicoesSaude.map((c) => (
+              <BlocoTexto key={c.chave} titulo={c.titulo} texto={c.texto} corBorda="border-red-300" bg="bg-red-50/60" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {relatorio.habitosVida.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Hábitos de Vida</h3>
+          <div className="space-y-2">
+            {relatorio.habitosVida.map((h) => (
+              <BlocoTexto key={h.chave} titulo={h.titulo} texto={h.texto} corBorda="border-amber-300" bg="bg-amber-50/60" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {relatorio.alimentacao && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Alimentação</h3>
+          <div className="rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
+            <p>{relatorio.alimentacao}</p>
+          </div>
+        </div>
+      )}
+
+      {relatorio.prioridades.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Próximas Prioridades</h3>
+          <div className="rounded-xl bg-black/[0.02] px-4 py-4">
+            <ol className="list-decimal space-y-1.5 pl-4 text-sm text-foreground">
+              {relatorio.prioridades.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      )}
+
+      {relatorio.mensagemFinal && (
+        <div className="rounded-xl bg-brand-50 px-4 py-4 text-sm italic leading-relaxed text-brand-800">
+          {relatorio.mensagemFinal}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BlocoTexto({
+  titulo,
+  texto,
+  corBorda,
+  bg,
+}: {
+  titulo: string;
+  texto: string;
+  corBorda: string;
+  bg: string;
+}) {
+  return (
+    <div className={`rounded-r-xl border-l-4 ${corBorda} ${bg} px-4 py-3`}>
+      <p className="mb-1 text-sm font-semibold text-foreground">{titulo}</p>
+      <p className="text-sm leading-relaxed text-foreground">{texto}</p>
+    </div>
+  );
+}
+
+function Metrica({ label, valor, sub }: { label: string; valor: string; sub?: string }) {
+  return (
+    <div className="rounded-xl bg-black/[0.02] px-3 py-2.5 text-center">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="text-base font-semibold text-foreground">{valor}</p>
+      {sub && <p className="text-xs text-muted">{sub}</p>}
+    </div>
+  );
+}

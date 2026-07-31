@@ -32,53 +32,64 @@ export default async function DetalheConsultaPage({ params }: { params: Promise<
   const textoResumoAntigo = avaliacao.resumo ?? avaliacao.ajuste_seguranca;
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-xl">
       <Link href="/historico" className="mb-5 inline-flex items-center gap-1 text-sm text-muted hover:text-foreground">
         <ChevronLeft className="h-4 w-4" /> Voltar para histórico
       </Link>
 
-      <div className="mb-1 flex items-center gap-2">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-          <Stethoscope className="h-4 w-4" />
-        </div>
-        <h1 className="text-xl font-bold text-foreground">Consulta nutricional</h1>
-      </div>
-      <p className="text-sm text-muted">{formatarData(avaliacao.criado_em, "dd/MM/yyyy 'às' HH:mm")}</p>
+      {/* Mesmo padrão visual da tela de resultado logo após a consulta
+       *  (ver ConsultaWizard.tsx) — card único, centralizado, pra que o
+       *  histórico seja um espelho fiel do que a pessoa viu na hora, e não
+       *  uma versão mais "solta" e desorganizada da mesma informação. */}
+      <Card className="animate-fade-in-up">
+        <CardContent className="text-center py-10">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
+            <Stethoscope className="h-6 w-6 text-brand-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-foreground">Consulta nutricional</h2>
+          <p className="mt-1 text-sm text-muted">{formatarData(avaliacao.criado_em, "dd/MM/yyyy 'às' HH:mm")}</p>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metrica label="IMC" valor={avaliacao.imc.toString()} sub={avaliacao.classificacao_imc} />
-        <Metrica label="TMB" valor={`${avaliacao.tmb} kcal`} />
-        <Metrica label="TDEE" valor={`${avaliacao.tdee} kcal`} />
-        <Metrica label="Meta calórica" valor={`${avaliacao.meta_calorica} kcal`} />
-      </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
+            <Metrica label="IMC" valor={avaliacao.imc.toString()} sub={avaliacao.classificacao_imc} />
+            <Metrica label="TMB" valor={`${avaliacao.tmb} kcal`} />
+            <Metrica label="TDEE" valor={`${avaliacao.tdee} kcal`} />
+            <Metrica label="Meta calórica" valor={`${avaliacao.meta_calorica} kcal`} />
+          </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metrica label="Proteína" valor={`${avaliacao.meta_proteina_g}g`} />
-        <Metrica label="Carboidrato" valor={`${avaliacao.meta_carboidrato_g}g`} />
-        <Metrica label="Gordura" valor={`${avaliacao.meta_gordura_g}g`} />
-        <Metrica label="Água" valor={`${(avaliacao.meta_agua_ml / 1000).toFixed(1)} L`} />
-      </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
+            <Metrica label="Proteína" valor={`${avaliacao.meta_proteina_g}g`} />
+            <Metrica label="Carboidrato" valor={`${avaliacao.meta_carboidrato_g}g`} />
+            <Metrica label="Gordura" valor={`${avaliacao.meta_gordura_g}g`} />
+            <Metrica label="Água" valor={`${(avaliacao.meta_agua_ml / 1000).toFixed(1)} L`} />
+          </div>
 
-      {relatorio ? (
-        <RelatorioEmCartoes relatorio={relatorio} />
-      ) : (
-        textoResumoAntigo && (
-          <Card className="mt-6">
-            <CardContent className="space-y-3 text-sm leading-relaxed text-foreground">
-              {textoResumoAntigo.split("\n\n").map((paragrafo, i) => (
-                <p key={i}>{paragrafo}</p>
-              ))}
-            </CardContent>
-          </Card>
-        )
-      )}
+          {relatorio ? (
+            <RelatorioEmCartoes relatorio={relatorio} />
+          ) : (
+            textoResumoAntigo && (
+              <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-left text-sm leading-relaxed text-foreground">
+                {textoResumoAntigo.split("\n\n").map((paragrafo, i) => (
+                  <p key={i}>{paragrafo}</p>
+                ))}
+              </div>
+            )
+          )}
 
-      {avaliacao.observacoes && (
-        <p className="mt-4 text-sm text-muted">
-          <span className="font-medium text-foreground">Você comentou na época: </span>
-          {avaliacao.observacoes}
-        </p>
-      )}
+          {/* Explicação do plano alimentar gerado nessa consulta — mesmo
+           *  texto mostrado na tela de resultado na hora (agora salvo em
+           *  observacoes_plano; null em consultas de antes dessa coluna). */}
+          {avaliacao.observacoes_plano && (
+            <p className="mt-5 text-sm text-muted">{avaliacao.observacoes_plano}</p>
+          )}
+
+          {avaliacao.observacoes && (
+            <p className="mt-2 text-sm text-muted">
+              <span className="font-medium text-foreground">Você comentou na época: </span>
+              {avaliacao.observacoes}
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -89,13 +100,11 @@ function RelatorioEmCartoes({
   relatorio: RelatorioConsulta;
 }) {
   return (
-    <div className="mt-6 space-y-5">
+    <div className="mt-4 space-y-4 text-left">
       {relatorio.resumoGeral && (
-        <Card>
-          <CardContent className="text-sm leading-relaxed text-foreground">
-            <p>{relatorio.resumoGeral}</p>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
+          <p>{relatorio.resumoGeral}</p>
+        </div>
       )}
 
       {relatorio.avisoMetaPeso && (
@@ -106,10 +115,10 @@ function RelatorioEmCartoes({
       )}
 
       {relatorio.pontosFortes.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-600">
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-600">
             O que você já faz muito bem
-          </h2>
+          </h3>
           <ul className="space-y-2">
             {relatorio.pontosFortes.map((texto, i) => (
               <li key={i} className="flex items-start gap-2 rounded-xl bg-brand-50 px-4 py-2.5 text-sm text-foreground">
@@ -118,14 +127,14 @@ function RelatorioEmCartoes({
               </li>
             ))}
           </ul>
-        </section>
+        </div>
       )}
 
       {relatorio.pontosAtencao.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
             Pontos que merecem mais atenção
-          </h2>
+          </h3>
           <ul className="space-y-1.5">
             {relatorio.pontosAtencao.map((ponto) => (
               <li key={ponto.chave} className="flex items-center gap-2.5 rounded-lg bg-amber-50 px-3.5 py-2 text-sm text-foreground">
@@ -136,59 +145,55 @@ function RelatorioEmCartoes({
               </li>
             ))}
           </ul>
-        </section>
+        </div>
       )}
 
       {relatorio.condicoesSaude.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Condições de Saúde</h2>
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Condições de Saúde</h3>
           <div className="space-y-2">
             {relatorio.condicoesSaude.map((c) => (
               <BlocoTexto key={c.chave} titulo={c.titulo} texto={c.texto} corBorda="border-red-300" bg="bg-red-50/60" />
             ))}
           </div>
-        </section>
+        </div>
       )}
 
       {relatorio.habitosVida.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Hábitos de Vida</h2>
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Hábitos de Vida</h3>
           <div className="space-y-2">
             {relatorio.habitosVida.map((h) => (
               <BlocoTexto key={h.chave} titulo={h.titulo} texto={h.texto} corBorda="border-amber-300" bg="bg-amber-50/60" />
             ))}
           </div>
-        </section>
+        </div>
       )}
 
       {relatorio.alimentacao && (
-        <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Alimentação</h2>
-          <Card>
-            <CardContent className="text-sm leading-relaxed text-foreground">
-              <p>{relatorio.alimentacao}</p>
-            </CardContent>
-          </Card>
-        </section>
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Alimentação</h3>
+          <div className="rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
+            <p>{relatorio.alimentacao}</p>
+          </div>
+        </div>
       )}
 
       {relatorio.prioridades.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Próximas Prioridades</h2>
-          <Card>
-            <CardContent>
-              <ol className="list-decimal space-y-1.5 pl-4 text-sm text-foreground">
-                {relatorio.prioridades.map((p, i) => (
-                  <li key={i}>{p}</li>
-                ))}
-              </ol>
-            </CardContent>
-          </Card>
-        </section>
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Próximas Prioridades</h3>
+          <div className="rounded-xl bg-black/[0.02] px-4 py-4">
+            <ol className="list-decimal space-y-1.5 pl-4 text-sm text-foreground">
+              {relatorio.prioridades.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ol>
+          </div>
+        </div>
       )}
 
       {relatorio.mensagemFinal && (
-        <div className="rounded-2xl bg-brand-50 px-5 py-4 text-sm italic leading-relaxed text-brand-800">
+        <div className="rounded-xl bg-brand-50 px-4 py-4 text-sm italic leading-relaxed text-brand-800">
           {relatorio.mensagemFinal}
         </div>
       )}

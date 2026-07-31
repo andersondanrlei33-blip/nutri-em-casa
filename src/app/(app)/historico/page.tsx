@@ -1,138 +1,222 @@
+import { notFound } from "next/navigation";
 import Link from "next/link";
-import { History, Stethoscope, Scale, Dumbbell, Ruler, Moon, Smile, ChevronRight } from "lucide-react";
+import { ChevronLeft, Stethoscope, CheckCircle2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { formatarData } from "@/lib/utils/date";
-import type {
-  AvaliacaoNutricional,
-  RegistroPeso,
-  RegistroExercicio,
-  RegistroMedidas,
-  RegistroSono,
-  RegistroHumor,
-} from "@/types/domain";
+import type { AvaliacaoNutricional, RelatorioConsulta } from "@/types/domain";
 
-interface EventoHistorico {
-  data: string;
-  titulo: string;
-  descricao: string;
-  icone: typeof History;
-  href?: string;
-}
-
-export default async function HistoricoPage() {
+export default async function DetalheConsultaPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const [{ data: avaliacoes }, { data: pesos }, { data: exercicios }, { data: medidas }, { data: sono }, { data: humor }] =
-    await Promise.all([
-      supabase.from("avaliacoes_nutricionais").select("*").eq("usuario_id", user.id).order("criado_em", { ascending: false }),
-      supabase.from("registros_peso").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
-      supabase.from("registros_exercicio").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
-      supabase.from("registros_medidas").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
-      supabase.from("registros_sono").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
-      supabase.from("registros_humor").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
-    ]);
+  // Filtra por usuario_id além do RLS — defesa extra pra garantir que
+  // ninguém acesse a consulta de outra pessoa só sabendo o id.
+  const { data } = await supabase
+    .from("avaliacoes_nutricionais")
+    .select("*")
+    .eq("id", id)
+    .eq("usuario_id", user.id)
+    .maybeSingle();
 
-  const eventos: EventoHistorico[] = [
-    ...((avaliacoes ?? []) as AvaliacaoNutricional[]).map((a) => ({
-      data: a.criado_em,
-      titulo: "Consulta nutricional realizada",
-      descricao: `IMC ${a.imc} (${a.classificacao_imc}) · Meta calórica ${a.meta_calorica} kcal`,
-      icone: Stethoscope,
-      href: `/historico/consulta/${a.id}`,
-    })),
-    ...((pesos ?? []) as RegistroPeso[]).map((p) => ({
-      data: p.data,
-      titulo: "Peso registrado",
-      descricao: `${p.peso_kg} kg${p.observacoes ? ` — ${p.observacoes}` : ""}`,
-      icone: Scale,
-    })),
-    ...((medidas ?? []) as RegistroMedidas[]).map((m) => ({
-      data: m.data,
-      titulo: "Medidas registradas",
-      descricao:
-        [
-          m.cintura_cm ? `Cintura ${m.cintura_cm}cm` : null,
-          m.quadril_cm ? `Quadril ${m.quadril_cm}cm` : null,
-          m.percentual_gordura ? `${m.percentual_gordura}% gordura` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ") || "Medidas atualizadas",
-      icone: Ruler,
-    })),
-    ...((exercicios ?? []) as RegistroExercicio[]).map((ex) => ({
-      data: ex.data,
-      titulo: "Exercício registrado",
-      descricao: `${ex.tipo} · ${ex.duracao_min} min · intensidade ${ex.intensidade}`,
-      icone: Dumbbell,
-    })),
-    ...((sono ?? []) as RegistroSono[]).map((s) => ({
-      data: s.data,
-      titulo: "Sono registrado",
-      descricao: `${s.horas}h · qualidade ${s.qualidade}/5`,
-      icone: Moon,
-    })),
-    ...((humor ?? []) as RegistroHumor[]).map((h) => ({
-      data: h.data,
-      titulo: "Humor registrado",
-      descricao: `Humor ${h.humor}/5 · Energia ${h.energia}/5${h.observacoes ? ` — ${h.observacoes}` : ""}`,
-      icone: Smile,
-    })),
-  ].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+  if (!data) notFound();
+  const avaliacao = data as AvaliacaoNutricional;
+  const relatorio = avaliacao.relatorio;
+
+  // Consultas antigas (de antes do relatório em cartões existir) caem de
+  // volta pro texto corrido que já era salvo — nunca ficam sem nenhum resumo.
+  const textoResumoAntigo = avaliacao.resumo ?? avaliacao.ajuste_seguranca;
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">Histórico</h1>
-        <p className="mt-1 text-sm text-muted">Linha do tempo completa da sua jornada no Nutri em Casa.</p>
+      <Link href="/historico" className="mb-5 inline-flex items-center gap-1 text-sm text-muted hover:text-foreground">
+        <ChevronLeft className="h-4 w-4" /> Voltar para histórico
+      </Link>
+
+      <div className="mb-1 flex items-center gap-2">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <Stethoscope className="h-4 w-4" />
+        </div>
+        <h1 className="text-xl font-bold text-foreground">Consulta nutricional</h1>
+      </div>
+      <p className="text-sm text-muted">{formatarData(avaliacao.criado_em, "dd/MM/yyyy 'às' HH:mm")}</p>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metrica label="IMC" valor={avaliacao.imc.toString()} sub={avaliacao.classificacao_imc} />
+        <Metrica label="TMB" valor={`${avaliacao.tmb} kcal`} />
+        <Metrica label="TDEE" valor={`${avaliacao.tdee} kcal`} />
+        <Metrica label="Meta calórica" valor={`${avaliacao.meta_calorica} kcal`} />
       </div>
 
-      {eventos.length === 0 ? (
-        <EmptyState
-          icone={History}
-          titulo="Ainda não há histórico"
-          descricao="À medida que você usa o app, seus eventos importantes aparecerão aqui."
-        />
-      ) : (
-        <Card>
-          <CardContent className="divide-y divide-border">
-            {eventos.map((evento, i) => {
-              const conteudo = (
-                <>
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-                    <evento.icone className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">{evento.titulo}</p>
-                    <p className="text-xs text-muted">{evento.descricao}</p>
-                    <p className="mt-0.5 text-xs text-muted">{formatarData(evento.data, "dd/MM/yyyy 'às' HH:mm")}</p>
-                  </div>
-                  {evento.href && <ChevronRight className="h-4 w-4 shrink-0 self-center text-muted" />}
-                </>
-              );
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metrica label="Proteína" valor={`${avaliacao.meta_proteina_g}g`} />
+        <Metrica label="Carboidrato" valor={`${avaliacao.meta_carboidrato_g}g`} />
+        <Metrica label="Gordura" valor={`${avaliacao.meta_gordura_g}g`} />
+        <Metrica label="Água" valor={`${(avaliacao.meta_agua_ml / 1000).toFixed(1)} L`} />
+      </div>
 
-              return evento.href ? (
-                <Link
-                  key={i}
-                  href={evento.href}
-                  className="-mx-1 flex gap-3 rounded-lg px-1 py-4 transition-colors first:pt-0 last:pb-0 hover:bg-black/[0.02]"
-                >
-                  {conteudo}
-                </Link>
-              ) : (
-                <div key={i} className="flex gap-3 py-4 first:pt-0 last:pb-0">
-                  {conteudo}
-                </div>
-              );
-            })}
+      {relatorio ? (
+        <RelatorioEmCartoes relatorio={relatorio} />
+      ) : (
+        textoResumoAntigo && (
+          <Card className="mt-6">
+            <CardContent className="space-y-3 text-sm leading-relaxed text-foreground">
+              {textoResumoAntigo.split("\n\n").map((paragrafo, i) => (
+                <p key={i}>{paragrafo}</p>
+              ))}
+            </CardContent>
+          </Card>
+        )
+      )}
+
+      {avaliacao.observacoes && (
+        <p className="mt-4 text-sm text-muted">
+          <span className="font-medium text-foreground">Você comentou na época: </span>
+          {avaliacao.observacoes}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RelatorioEmCartoes({ relatorio }: { relatorio: RelatorioConsulta }) {
+  return (
+    <div className="mt-6 space-y-5">
+      {relatorio.resumoGeral && (
+        <Card>
+          <CardContent className="text-sm leading-relaxed text-foreground">
+            <p>{relatorio.resumoGeral}</p>
           </CardContent>
         </Card>
       )}
+
+      {relatorio.avisoMetaPeso && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm leading-relaxed text-red-800">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-600">Aviso de segurança</p>
+          <p>{relatorio.avisoMetaPeso}</p>
+        </div>
+      )}
+
+      {relatorio.pontosFortes.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-600">
+            O que você já faz muito bem
+          </h2>
+          <ul className="space-y-2">
+            {relatorio.pontosFortes.map((texto, i) => (
+              <li key={i} className="flex items-start gap-2 rounded-xl bg-brand-50 px-4 py-2.5 text-sm text-foreground">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+                <span>{texto}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {relatorio.pontosAtencao.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Pontos que merecem mais atenção
+          </h2>
+          <ul className="space-y-1.5">
+            {relatorio.pontosAtencao.map((ponto) => (
+              <li key={ponto.chave} className="flex items-center gap-2.5 rounded-lg bg-amber-50 px-3.5 py-2 text-sm text-foreground">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-400 text-[11px] font-bold text-white">
+                  {ponto.prioridade}
+                </span>
+                {ponto.titulo}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {relatorio.condicoesSaude.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Condições de Saúde</h2>
+          <div className="space-y-2">
+            {relatorio.condicoesSaude.map((c) => (
+              <BlocoTexto key={c.chave} titulo={c.titulo} texto={c.texto} corBorda="border-red-300" bg="bg-red-50/60" />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {relatorio.habitosVida.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Hábitos de Vida</h2>
+          <div className="space-y-2">
+            {relatorio.habitosVida.map((h) => (
+              <BlocoTexto key={h.chave} titulo={h.titulo} texto={h.texto} corBorda="border-amber-300" bg="bg-amber-50/60" />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {relatorio.alimentacao && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Alimentação</h2>
+          <Card>
+            <CardContent className="text-sm leading-relaxed text-foreground">
+              <p>{relatorio.alimentacao}</p>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      {relatorio.prioridades.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Próximas Prioridades</h2>
+          <Card>
+            <CardContent>
+              <ol className="list-decimal space-y-1.5 pl-4 text-sm text-foreground">
+                {relatorio.prioridades.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ol>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      {relatorio.mensagemFinal && (
+        <div className="rounded-2xl bg-brand-50 px-5 py-4 text-sm italic leading-relaxed text-brand-800">
+          {relatorio.mensagemFinal}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Metrica({ label, valor, sub }: { label: string; valor: string; sub?: string }) {
+  return (
+    <div className="rounded-xl bg-black/[0.02] px-3 py-2.5 text-center">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="text-base font-semibold text-foreground">{valor}</p>
+      {sub && <p className="text-xs text-muted">{sub}</p>}
+    </div>
+  );
+}
+
+function BlocoTexto({
+  titulo,
+  texto,
+  corBorda,
+  bg,
+}: {
+  titulo: string;
+  texto: string;
+  corBorda: string;
+  bg: string;
+}) {
+  return (
+    <div className={`rounded-r-xl border-l-4 ${corBorda} ${bg} px-4 py-3`}>
+      <p className="mb-1 text-sm font-semibold text-foreground">{titulo}</p>
+      <p className="text-sm leading-relaxed text-foreground">{texto}</p>
     </div>
   );
 }

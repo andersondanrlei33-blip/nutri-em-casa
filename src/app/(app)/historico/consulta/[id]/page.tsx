@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Stethoscope, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, Stethoscope, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/Card";
 import { formatarData } from "@/lib/utils/date";
-import type { AvaliacaoNutricional, RelatorioConsulta } from "@/types/domain";
+import type { AvaliacaoNutricional } from "@/types/domain";
 
 export default async function DetalheConsultaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,177 +25,101 @@ export default async function DetalheConsultaPage({ params }: { params: Promise<
 
   if (!data) notFound();
   const avaliacao = data as AvaliacaoNutricional;
-  const relatorio = avaliacao.relatorio;
 
-  // Consultas antigas (de antes do relatório em cartões existir) caem de
-  // volta pro texto corrido que já era salvo — nunca ficam sem nenhum resumo.
-  const textoResumoAntigo = avaliacao.resumo ?? avaliacao.ajuste_seguranca;
+  // Consultas antigas (antes da coluna "resumo" existir) caem de volta pro
+  // texto de avisos que já era salvo — nunca ficam sem nenhum resumo.
+  const textoResumo = avaliacao.resumo ?? avaliacao.ajuste_seguranca;
+
+  // Link temporário (10 min) pro arquivo da avaliação física — o bucket é
+  // privado (diferente de avatares/receitas), então precisa de signed URL,
+  // nunca de link público direto (ver migration add_avaliacao_fisica).
+  let linkArquivoAvaliacaoFisica: string | null = null;
+  if (avaliacao.avaliacao_fisica_arquivo_url) {
+    const { data: assinado } = await supabase.storage
+      .from("avaliacoes-fisicas")
+      .createSignedUrl(avaliacao.avaliacao_fisica_arquivo_url, 60 * 10);
+    linkArquivoAvaliacaoFisica = assinado?.signedUrl ?? null;
+  }
 
   return (
-    <div className="mx-auto max-w-xl">
+    <div className="mx-auto max-w-2xl">
       <Link href="/historico" className="mb-5 inline-flex items-center gap-1 text-sm text-muted hover:text-foreground">
         <ChevronLeft className="h-4 w-4" /> Voltar para histórico
       </Link>
 
-      {/* Mesmo padrão visual da tela de resultado logo após a consulta
-       *  (ver ConsultaWizard.tsx) — card único, centralizado, pra que o
-       *  histórico seja um espelho fiel do que a pessoa viu na hora, e não
-       *  uma versão mais "solta" e desorganizada da mesma informação. */}
-      <Card className="animate-fade-in-up">
-        <CardContent className="text-center py-10">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
-            <Stethoscope className="h-6 w-6 text-brand-600" />
-          </div>
-          <h2 className="text-lg font-semibold text-foreground">Consulta nutricional</h2>
-          <p className="mt-1 text-sm text-muted">{formatarData(avaliacao.criado_em, "dd/MM/yyyy 'às' HH:mm")}</p>
+      <div className="mb-1 flex items-center gap-2">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <Stethoscope className="h-4 w-4" />
+        </div>
+        <h1 className="text-xl font-bold text-foreground">Consulta nutricional</h1>
+      </div>
+      <p className="text-sm text-muted">{formatarData(avaliacao.criado_em, "dd/MM/yyyy 'às' HH:mm")}</p>
 
-          <div className="mt-4 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
-            <Metrica label="IMC" valor={avaliacao.imc.toString()} sub={avaliacao.classificacao_imc} />
-            <Metrica label="TMB" valor={`${avaliacao.tmb} kcal`} />
-            <Metrica label="TDEE" valor={`${avaliacao.tdee} kcal`} />
-            <Metrica label="Meta calórica" valor={`${avaliacao.meta_calorica} kcal`} />
-          </div>
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metrica label="IMC" valor={avaliacao.imc.toString()} sub={avaliacao.classificacao_imc} />
+        <Metrica label="TMB" valor={`${avaliacao.tmb} kcal`} />
+        <Metrica label="TDEE" valor={`${avaliacao.tdee} kcal`} />
+        <Metrica label="Meta calórica" valor={`${avaliacao.meta_calorica} kcal`} />
+      </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
-            <Metrica label="Proteína" valor={`${avaliacao.meta_proteina_g}g`} />
-            <Metrica label="Carboidrato" valor={`${avaliacao.meta_carboidrato_g}g`} />
-            <Metrica label="Gordura" valor={`${avaliacao.meta_gordura_g}g`} />
-            <Metrica label="Água" valor={`${(avaliacao.meta_agua_ml / 1000).toFixed(1)} L`} />
-          </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metrica label="Proteína" valor={`${avaliacao.meta_proteina_g}g`} />
+        <Metrica label="Carboidrato" valor={`${avaliacao.meta_carboidrato_g}g`} />
+        <Metrica label="Gordura" valor={`${avaliacao.meta_gordura_g}g`} />
+        <Metrica label="Água" valor={`${(avaliacao.meta_agua_ml / 1000).toFixed(1)} L`} />
+      </div>
 
-          {relatorio ? (
-            <RelatorioEmCartoes relatorio={relatorio} />
-          ) : (
-            textoResumoAntigo && (
-              <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-left text-sm leading-relaxed text-foreground">
-                {textoResumoAntigo.split("\n\n").map((paragrafo, i) => (
-                  <p key={i}>{paragrafo}</p>
-                ))}
+      {(avaliacao.avaliacao_fisica_arquivo_nome || avaliacao.avaliacao_fisica_dados) && (
+        <Card className="mt-6">
+          <CardContent className="text-sm text-foreground">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Avaliação Física</h2>
+            {avaliacao.avaliacao_fisica_arquivo_nome && (
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 shrink-0 text-brand-600" />
+                {linkArquivoAvaliacaoFisica ? (
+                  
+                    href={linkArquivoAvaliacaoFisica}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-brand-700 underline hover:text-brand-800"
+                  >
+                    {avaliacao.avaliacao_fisica_arquivo_nome}
+                  </a>
+                ) : (
+                  <span>{avaliacao.avaliacao_fisica_arquivo_nome}</span>
+                )}
               </div>
-            )
-          )}
-
-          {/* Explicação do plano alimentar gerado nessa consulta — mesmo
-           *  texto mostrado na tela de resultado na hora (agora salvo em
-           *  observacoes_plano; null em consultas de antes dessa coluna). */}
-          {avaliacao.observacoes_plano && (
-            <p className="mt-5 text-sm text-muted">{avaliacao.observacoes_plano}</p>
-          )}
-
-          {avaliacao.observacoes && (
-            <p className="mt-2 text-sm text-muted">
-              <span className="font-medium text-foreground">Você comentou na época: </span>
-              {avaliacao.observacoes}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function RelatorioEmCartoes({
-  relatorio,
-}: {
-  relatorio: RelatorioConsulta;
-}) {
-  return (
-    <div className="mt-4 space-y-4 text-left">
-      {relatorio.resumoGeral && (
-        <div className="rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
-          <p>{relatorio.resumoGeral}</p>
-        </div>
+            )}
+            {avaliacao.avaliacao_fisica_dados?.percentualGordura != null && (
+              <p className="mt-2 leading-relaxed text-muted">
+                % de gordura: {avaliacao.avaliacao_fisica_dados.percentualGordura}%
+                {avaliacao.avaliacao_fisica_dados.classificacaoAvaliador
+                  ? ` (${avaliacao.avaliacao_fisica_dados.classificacaoAvaliador})`
+                  : ""}
+              </p>
+            )}
+            {avaliacao.avaliacao_fisica_dados?.resumoTexto && (
+              <p className="mt-2 leading-relaxed text-muted">{avaliacao.avaliacao_fisica_dados.resumoTexto}</p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
-      {relatorio.avisoMetaPeso && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm leading-relaxed text-red-800">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-600">Aviso de segurança</p>
-          <p>{relatorio.avisoMetaPeso}</p>
-        </div>
-      )}
-
-      {relatorio.pontosFortes.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-600">
-            O que você já faz muito bem
-          </h3>
-          <ul className="space-y-2">
-            {relatorio.pontosFortes.map((texto, i) => (
-              <li key={i} className="flex items-start gap-2 rounded-xl bg-brand-50 px-4 py-2.5 text-sm text-foreground">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
-                <span>{texto}</span>
-              </li>
+      {textoResumo && (
+        <Card className="mt-6">
+          <CardContent className="space-y-3 text-sm leading-relaxed text-foreground">
+            {textoResumo.split("\n\n").map((paragrafo, i) => (
+              <p key={i}>{paragrafo}</p>
             ))}
-          </ul>
-        </div>
+          </CardContent>
+        </Card>
       )}
 
-      {relatorio.pontosAtencao.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
-            Pontos que merecem mais atenção
-          </h3>
-          <ul className="space-y-1.5">
-            {relatorio.pontosAtencao.map((ponto) => (
-              <li key={ponto.chave} className="flex items-center gap-2.5 rounded-lg bg-amber-50 px-3.5 py-2 text-sm text-foreground">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-400 text-[11px] font-bold text-white">
-                  {ponto.prioridade}
-                </span>
-                {ponto.titulo}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {relatorio.condicoesSaude.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Condições de Saúde</h3>
-          <div className="space-y-2">
-            {relatorio.condicoesSaude.map((c) => (
-              <BlocoTexto key={c.chave} titulo={c.titulo} texto={c.texto} corBorda="border-red-300" bg="bg-red-50/60" />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {relatorio.habitosVida.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Hábitos de Vida</h3>
-          <div className="space-y-2">
-            {relatorio.habitosVida.map((h) => (
-              <BlocoTexto key={h.chave} titulo={h.titulo} texto={h.texto} corBorda="border-amber-300" bg="bg-amber-50/60" />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {relatorio.alimentacao && (
-        <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Alimentação</h3>
-          <div className="rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
-            <p>{relatorio.alimentacao}</p>
-          </div>
-        </div>
-      )}
-
-      {relatorio.prioridades.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Próximas Prioridades</h3>
-          <div className="rounded-xl bg-black/[0.02] px-4 py-4">
-            <ol className="list-decimal space-y-1.5 pl-4 text-sm text-foreground">
-              {relatorio.prioridades.map((p, i) => (
-                <li key={i}>{p}</li>
-              ))}
-            </ol>
-          </div>
-        </div>
-      )}
-
-      {relatorio.mensagemFinal && (
-        <div className="rounded-xl bg-brand-50 px-4 py-4 text-sm italic leading-relaxed text-brand-800">
-          {relatorio.mensagemFinal}
-        </div>
+      {avaliacao.observacoes && (
+        <p className="mt-4 text-sm text-muted">
+          <span className="font-medium text-foreground">Você comentou na época: </span>
+          {avaliacao.observacoes}
+        </p>
       )}
     </div>
   );
@@ -207,25 +131,6 @@ function Metrica({ label, valor, sub }: { label: string; valor: string; sub?: st
       <p className="text-xs text-muted">{label}</p>
       <p className="text-base font-semibold text-foreground">{valor}</p>
       {sub && <p className="text-xs text-muted">{sub}</p>}
-    </div>
-  );
-}
-
-function BlocoTexto({
-  titulo,
-  texto,
-  corBorda,
-  bg,
-}: {
-  titulo: string;
-  texto: string;
-  corBorda: string;
-  bg: string;
-}) {
-  return (
-    <div className={`rounded-r-xl border-l-4 ${corBorda} ${bg} px-4 py-3`}>
-      <p className="mb-1 text-sm font-semibold text-foreground">{titulo}</p>
-      <p className="text-sm leading-relaxed text-foreground">{texto}</p>
     </div>
   );
 }

@@ -54,6 +54,39 @@ export interface PontoAtencao {
   categoria: "condicao_saude" | "habito_vida";
   texto: string;
 }
+/** Dados extraídos por IA de uma foto do documento de avaliação física
+ *  (bioimpedância, dobras cutâneas, antropometria etc.) anexado na consulta —
+ *  ver lib/nutrition/avaliacaoFisica.ts::extrairAvaliacaoFisica. A IA só lê e
+ *  organiza o que está escrito no documento; nunca decide nada com base
+ *  nesses dados (isso é avaliarComposicaoCorporal, também nesse arquivo).
+ *  Qualquer campo pode vir null quando o documento não trouxer aquele dado. */
+export interface AvaliacaoFisicaExtraida {
+  dataAvaliacao: string | null;
+  metodo: string | null;
+  percentualGordura: number | null;
+  massaGordaKg: number | null;
+  massaMagraKg: number | null;
+  aguaCorporalPercentual: number | null;
+  tmbMedidoKcal: number | null;
+  idadeMetabolica: number | null;
+  dobrasCutaneasMm: Record<string, number> | null;
+  circunferenciasCm: Record<string, number> | null;
+  classificacaoAvaliador: string | null;
+  observacoesAvaliador: string | null;
+  resumoTexto: string;
+}
+/** Resultado de cruzar o % de gordura da avaliação física com a
+ *  classificação de IMC já calculada — ver
+ *  lib/nutrition/avaliacaoFisica.ts::avaliarComposicaoCorporal.
+ *  `textoComparativo` só vem preenchido quando os dois indicadores divergem
+ *  o bastante pra merecer uma nota no relatório; do contrário é null. */
+export interface ComposicaoCorporalResultado {
+  percentualGordura: number;
+  massaMagraKg: number | null;
+  massaGordaKg: number | null;
+  classificacaoPercentualGordura: string;
+  textoComparativo: string | null;
+}
 /** Relatório da consulta em blocos, gerado por
  *  lib/nutrition/calculations.ts::montarRelatorioConsulta e salvo em
  *  avaliacoes_nutricionais.relatorio (jsonb). Usado pela tela de resultado
@@ -73,6 +106,10 @@ export interface RelatorioConsulta {
   prioridades: string[];
   mensagemFinal: string;
   avisoMetaPeso: string | null;
+  /** Preenchido só quando o paciente anexou avaliação física com % de
+   *  gordura legível na consulta atual — null nos demais casos (inclusive
+   *  em relatórios de consultas anteriores a essa coluna). */
+  composicaoCorporal: ComposicaoCorporalResultado | null;
 }
 export interface Perfil {
   id: string;
@@ -185,6 +222,16 @@ export interface AvaliacaoNutricional {
    *  ele se perder depois da tela de resultado. Null em consultas anteriores
    *  a essa coluna. */
   observacoes_plano: string | null;
+  /** Caminho do arquivo no bucket privado avaliacoes-fisicas (não é URL
+   *  pública — precisa de signed URL pra visualizar). Null quando o
+   *  paciente não anexou avaliação física nessa consulta. */
+  avaliacao_fisica_arquivo_url: string | null;
+  /** Nome original do arquivo enviado, só pra exibição no Histórico. */
+  avaliacao_fisica_arquivo_nome: string | null;
+  /** Dados extraídos do documento pela IA — ver AvaliacaoFisicaExtraida.
+   *  Null quando não há anexo ou a extração falhou (nesse caso o arquivo
+   *  ainda fica salvo, só não tem os dados estruturados). */
+  avaliacao_fisica_dados: AvaliacaoFisicaExtraida | null;
 }
 export interface Receita {
   id: string;

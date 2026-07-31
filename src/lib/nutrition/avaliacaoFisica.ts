@@ -56,6 +56,13 @@ export async function extrairAvaliacaoFisica(
                 '  "circunferenciasCm": { "local em português": número, ... } ou null,\n' +
                 '  "classificacaoAvaliador": "classificação que o próprio documento usa (ex: Atlético) ou null",\n' +
                 '  "observacoesAvaliador": "observações escritas no documento pelo profissional, ou null",\n' +
+                '  "pesoCategoria": "abaixo" | "normal" | "acima" | null — SÓ preencha se o documento mostrar ' +
+                'um gráfico, barra ou faixa indicando visualmente se o peso está abaixo, dentro ou acima da ' +
+                "faixa de referência do aparelho (comum em laudos de bioimpedância/InBody). Se não houver essa " +
+                "indicação visual explícita, use null — nunca deduza isso só a partir do número.\n" +
+                '  "massaMuscularCategoria": "abaixo" | "normal" | "acima" | null — mesma lógica acima, mas ' +
+                "para a massa muscular (esquelética). SÓ preencha se o documento indicar isso explicitamente " +
+                "(gráfico/barra/faixa), nunca deduza.\n" +
                 '  "resumoTexto": "resumo em texto corrido (3-5 frases) de tudo que você encontrou no documento, ' +
                 'incluindo qualquer dado relevante que não coube nos campos acima"\n' +
                 "}\n\n" +
@@ -86,6 +93,8 @@ export async function extrairAvaliacaoFisica(
       );
       return entradas.length > 0 ? Object.fromEntries(entradas) : null;
     };
+    const categoriaOuNull = (v: unknown): "abaixo" | "normal" | "acima" | null =>
+      v === "abaixo" || v === "normal" || v === "acima" ? v : null;
 
     return {
       dataAvaliacao: textoOuNull(bruto.dataAvaliacao),
@@ -100,6 +109,8 @@ export async function extrairAvaliacaoFisica(
       circunferenciasCm: mapaOuNull(bruto.circunferenciasCm),
       classificacaoAvaliador: textoOuNull(bruto.classificacaoAvaliador),
       observacoesAvaliador: textoOuNull(bruto.observacoesAvaliador),
+      pesoCategoria: categoriaOuNull(bruto.pesoCategoria),
+      massaMuscularCategoria: categoriaOuNull(bruto.massaMuscularCategoria),
       resumoTexto: textoOuNull(bruto.resumoTexto) ?? "Não foi possível resumir o conteúdo do documento.",
     };
   } catch (erro) {
@@ -138,76 +149,48 @@ const FAIXAS_GORDURA: Record<Genero, { ate: number; rotulo: string }[]> = {
   ],
 };
 
-function classificarPercentualGordura(percentual: number, genero: Genero): string {
+/** Exportada porque lib/avaliacaoFisica/ponte.ts reaproveita esta MESMA
+ *  classificação (nunca uma segunda fonte de verdade divergente) pra
+ *  traduzir o % de gordura pros 3 níveis que o motor de interpretação
+ *  entende (abaixo/normal/acima). */
+export function classificarPercentualGordura(percentual: number, genero: Genero): string {
   const faixa = FAIXAS_GORDURA[genero].find((f) => percentual <= f.ate);
   return faixa?.rotulo ?? "Aceitável";
 }
 
-/** Posição ordinal de cada classificação (0 = mais "magro", 4 = mais
- *  "gordo") — usada só pra comparar com a posição ordinal do IMC e
- *  detectar divergência, nunca exibida diretamente. */
-const ORDEM_GORDURA = ["Essencial", "Atlético", "Fitness", "Aceitável", "Acima do recomendado"];
-const ORDEM_IMC = [
-  "Abaixo do peso",
-  "Peso normal",
-  "Sobrepeso",
-  "Obesidade grau I",
-  "Obesidade grau II",
-  "Obesidade grau III",
-];
-
 /**
- * Cruza o % de gordura real (quando o paciente anexou avaliação física)
- * com a classificação de IMC já calculada — nunca substitui o IMC (ele
- * continua sendo calculado e exibido normalmente em todo o resto do app,
- * incluindo Dashboard e Evolução), só adiciona contexto no relatório da
- * consulta quando os dois indicadores contam histórias muito diferentes,
- * que é exatamente onde o IMC sozinho mais erra:
+ * Monta os números da composição corporal pra exibição (% de gordura,
+ * massa magra, massa gorda) e o texto comparativo com o IMC.
  *
- *  - IMC alto (sobrepeso ou mais) mas gordura baixa (fitness/atlético) →
- *    provável alta massa muscular, não excesso de gordura — evita alarmar
- *    à toa uma pessoa musculosa.
- *  - IMC normal (ou abaixo) mas gordura alta (aceitável no topo da faixa
- *    ou acima) → "peso normal com composição desfavorável" (às vezes
- *    chamado de obesidade sarcopênica/"skinny fat") — o IMC sozinho não
- *    pegaria isso.
+ * O texto comparativo (`textoComparativo`) vem do motor de interpretação
+ * novo em lib/avaliacaoFisica/ (ver ponte.ts::gerarTextoInterpretacaoAvaliacaoFisica),
+ * que substitui a heurística antiga que só comparava duas faixas fixas —
+ * essa heurística antiga tinha um bug real: a categoria "Fitness" (ex: 14,1%
+ * num homem) ficava de fora do teste de "gordura baixa" (só reconhecia
+ * Essencial/Atlético), então o app deixava de explicar que um IMC alto era
+ * por massa muscular exatamente nos casos mais comuns. `textoMotor` já vem
+ * pronto (calculado antes, de forma assíncrona, em route.ts) — esta função
+ * só recebe o texto já pronto porque o resto de calculations.ts é
+ * deliberadamente síncrono/puro, sem chamadas a serviço externo.
  *
- * Quando os dois concordam, ou não há avaliação física com % de gordura
- * legível, retorna só os números (ou null) — sem texto de divergência.
+ * Quando não há avaliação física com % de gordura legível, retorna null —
+ * sem card de composição corporal.
  */
 export function avaliarComposicaoCorporal(
   dados: AvaliacaoFisicaExtraida | null,
   classificacaoImc: string,
-  genero: Genero
+  genero: Genero,
+  textoMotor: string | null = null
 ): ComposicaoCorporalResultado | null {
   if (!dados || dados.percentualGordura == null) return null;
 
   const classificacaoGordura = classificarPercentualGordura(dados.percentualGordura, genero);
-  const posicaoGordura = ORDEM_GORDURA.indexOf(classificacaoGordura);
-  const posicaoImc = ORDEM_IMC.indexOf(classificacaoImc);
-
-  let textoComparativo: string | null = null;
-  if (posicaoImc >= 2 && posicaoGordura >= 0 && posicaoGordura <= 1) {
-    textoComparativo =
-      `Seu IMC está na faixa de ${classificacaoImc.toLowerCase()}, mas o percentual de gordura da sua ` +
-      `avaliação física (${dados.percentualGordura}%, classificado como ${classificacaoGordura.toLowerCase()}) ` +
-      "sugere um quadro mais favorável do que o IMC isolado indicaria — provavelmente por uma massa muscular " +
-      "mais alta. O IMC sozinho não diferencia peso de músculo e peso de gordura, então nesse caso a composição " +
-      "corporal real conta uma história mais precisa do que o número da balança.";
-  } else if (posicaoImc >= 0 && posicaoImc <= 1 && posicaoGordura >= 3) {
-    textoComparativo =
-      `Seu IMC está na faixa de ${classificacaoImc.toLowerCase()}, mas o percentual de gordura da sua ` +
-      `avaliação física (${dados.percentualGordura}%, classificado como ${classificacaoGordura.toLowerCase()}) ` +
-      "pede atenção mesmo assim — é possível ter um peso considerado normal e, ainda assim, uma proporção de " +
-      "gordura corporal acima do ideal (às vezes chamado de composição corporal desfavorável apesar do peso " +
-      "normal). Vale considerar isso ao lado do IMC, não só o número da balança.";
-  }
 
   return {
     percentualGordura: dados.percentualGordura,
     massaMagraKg: dados.massaMagraKg,
     massaGordaKg: dados.massaGordaKg,
     classificacaoPercentualGordura: classificacaoGordura,
-    textoComparativo,
+    textoComparativo: textoMotor,
   };
 }

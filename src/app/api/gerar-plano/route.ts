@@ -8,8 +8,9 @@ import type { AvaliacaoNutricional, Receita } from "@/types/domain";
 const CorpoSchema = z.object({
   peso_kg: z.number().positive(),
   altura_cm: z.number().positive(),
-  idade: z.number().int().min(10).max(120),
-  genero: z.enum(["feminino", "masculino", "outro"]),
+  // idade e gênero não vêm mais do formulário — são buscados do perfil
+  // (tabela perfis) logo abaixo, pra não confiar em nada calculável no
+  // navegador pra um dado que entra direto na fórmula de TMB/TDEE.
   nivel_atividade: z.enum(["sedentario", "leve", "moderado", "intenso", "atleta"]),
   objetivo: z.enum([
     "emagrecimento",
@@ -77,10 +78,29 @@ const CorpoSchema = z.object({
   preferencia_sabor: z.array(z.string()).default([]),
   frequencia_restaurante: z.string().nullable().optional(),
   historico_dietetico: z.string().nullable().optional(),
+  // Só respondidas por quem não é sedentário (pergunta condicional no
+  // ConsultaWizard) — null pra sedentários.
+  horario_treino: z.string().nullable().optional(),
+  quer_pre_pos_treino: z.boolean().nullable().optional(),
   perda_peso_nao_intencional: z.string().nullable().optional(), // gera aviso automático
   ganho_peso_nao_intencional: z.string().nullable().optional(), // gera aviso automático
   como_conheceu: z.string().nullable().optional(),
 });
+
+/** Idade calculada a partir da data de nascimento salva no perfil — mesma
+ *  lógica usada no cliente (CadastroPage/ConsultaWizard), reaplicada aqui
+ *  porque idade é um dado que entra direto na fórmula de TMB/TDEE e nunca
+ *  deve vir calculada só do navegador. */
+function calcularIdade(dataNascimentoISO: string): number {
+  const nascimento = new Date(dataNascimentoISO);
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+  const aindaNaoFezAniversarioEsseAno =
+    hoje.getMonth() < nascimento.getMonth() ||
+    (hoje.getMonth() === nascimento.getMonth() && hoje.getDate() < nascimento.getDate());
+  if (aindaNaoFezAniversarioEsseAno) idade--;
+  return idade;
+}
 
 /**
  * Consulta Nutricional completa: calcula IMC/TMB/TDEE/macros, salva a
@@ -97,6 +117,27 @@ export async function POST(request: Request) {
   if (!user) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
+
+  // Gênero e data de nascimento vêm do perfil (cadastro/"Meu Perfil"), não
+  // mais do formulário da consulta — busca aqui, no servidor, pra nunca
+  // confiar num valor calculável no navegador pra um dado que entra direto
+  // na fórmula de TMB/TDEE. A tela de consulta já bloqueia o acesso quando
+  // esses dados faltam (ver consulta/page.tsx), mas essa validação aqui é
+  // a que realmente importa — sem ela, dava pra chamar a API direto.
+  const { data: perfil } = await supabase
+    .from("perfis")
+    .select("genero, data_nascimento")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (!perfil?.genero || !perfil?.data_nascimento) {
+    return NextResponse.json(
+      { erro: "Complete seu gênero e data de nascimento em Meu Perfil antes de fazer a consulta." },
+      { status: 400 }
+    );
+  }
+  const genero = perfil.genero;
+  const idade = calcularIdade(perfil.data_nascimento);
 
   const corpo = await request.json();
   const parse = CorpoSchema.safeParse(corpo);
@@ -118,8 +159,8 @@ export async function POST(request: Request) {
   const resultado = gerarResultadoAvaliacao({
     pesoKg: dados.peso_kg,
     alturaCm: dados.altura_cm,
-    idade: dados.idade,
-    genero: dados.genero,
+    idade,
+    genero,
     nivelAtividade: dados.nivel_atividade,
     objetivo: dados.objetivo,
     gestante: dados.gestante,
@@ -159,8 +200,8 @@ export async function POST(request: Request) {
       usuario_id: user.id,
       peso_kg: dados.peso_kg,
       altura_cm: dados.altura_cm,
-      idade: dados.idade,
-      genero: dados.genero,
+      idade,
+      genero,
       nivel_atividade: dados.nivel_atividade,
       objetivo: dados.objetivo,
       // Nunca persiste a meta de peso bruta enviada pelo cliente — usa o
@@ -223,6 +264,8 @@ export async function POST(request: Request) {
       preferencia_sabor: dados.preferencia_sabor,
       frequencia_restaurante: dados.frequencia_restaurante || null,
       historico_dietetico: dados.historico_dietetico || null,
+      horario_treino: dados.horario_treino || null,
+      quer_pre_pos_treino: dados.quer_pre_pos_treino ?? null,
       perda_peso_nao_intencional: dados.perda_peso_nao_intencional || null,
       ganho_peso_nao_intencional: dados.ganho_peso_nao_intencional || null,
       como_conheceu: dados.como_conheceu || null,

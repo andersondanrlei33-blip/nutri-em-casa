@@ -58,9 +58,9 @@ const CorpoSchema = z.object({
   horas_sono: z.string().nullable().optional(),
   insonia: z.boolean().nullable().optional(), // reforça aviso de sono (avaliarSonoEEstresse)
   medicacao_sono: z.string().nullable().optional(),
-  disposicao_manha: z.string().nullable().optional(),
-  disposicao_tarde: z.string().nullable().optional(),
-  disposicao_noite: z.string().nullable().optional(),
+  disposicao_manha: z.string().nullable().optional(), // usado pelo relatório em cartões (pontos fortes)
+  disposicao_tarde: z.string().nullable().optional(), // usado pelo relatório em cartões (pontos fortes)
+  disposicao_noite: z.string().nullable().optional(), // usado pelo relatório em cartões (pontos fortes)
   concentracao: z.string().nullable().optional(),
   memoria_recente: z.string().nullable().optional(),
   memoria_antiga: z.string().nullable().optional(),
@@ -136,6 +136,9 @@ export async function POST(request: Request) {
     rotinaTrabalho: dados.rotina_trabalho,
     mastigacao: dados.mastigacao,
     frequenciaRestaurante: dados.frequencia_restaurante,
+    disposicaoManha: dados.disposicao_manha,
+    disposicaoTarde: dados.disposicao_tarde,
+    disposicaoNoite: dados.disposicao_noite,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase
@@ -170,6 +173,10 @@ export async function POST(request: Request) {
       historico_transtorno_alimentar: dados.historico_transtorno_alimentar,
       ajuste_seguranca: resultado.avisos.length > 0 ? resultado.avisos.join("\n\n") : null,
       resumo: resultado.resumo,
+      // Relatório novo, em blocos — ver calculations.ts::montarRelatorioConsulta.
+      // O texto corrido acima (resumo/ajuste_seguranca) continua sendo salvo
+      // do mesmo jeito, sem nenhuma mudança, só por garantia/compatibilidade.
+      relatorio: resultado.relatorio,
       imc: resultado.imc,
       classificacao_imc: resultado.classificacaoImc,
       tmb: resultado.tmb,
@@ -283,5 +290,8 @@ export async function POST(request: Request) {
     avisos: resultado.avisos,
     resumoConsulta: resultado.resumo,
     avisoMetaPeso: resultado.avisoMetaPeso,
+    // Relatório novo em blocos — a tela de resultado da consulta usa isso
+    // pra montar os cartões (ver calculations.ts::RelatorioConsulta).
+    relatorio: resultado.relatorio,
   });
 }

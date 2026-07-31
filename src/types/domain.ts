@@ -74,6 +74,19 @@ export interface AvaliacaoFisicaExtraida {
   classificacaoAvaliador: string | null;
   observacoesAvaliador: string | null;
   resumoTexto: string;
+  /** Quando o documento mostra um gráfico/faixa indicando se o peso está
+   *  abaixo, dentro ou acima da faixa de referência do aparelho (comum em
+   *  laudos de bioimpedância tipo InBody) — a IA só lê a posição indicada
+   *  no próprio documento, nunca calcula isso. Null quando o documento não
+   *  mostra essa informação. Usado pelo motor de interpretação em
+   *  lib/avaliacaoFisica/. */
+  pesoCategoria: "abaixo" | "normal" | "acima" | null;
+  /** Mesma lógica de pesoCategoria, mas pra massa muscular — é este campo
+   *  que permite ao motor detectar "IMC alto mascarado por músculo" (regra
+   *  R1 em lib/avaliacaoFisica/regras.ts), já que o app não tem como
+   *  calcular sozinho se uma massa muscular é "alta" sem a faixa de
+   *  referência que só o aparelho/documento sabe. */
+  massaMuscularCategoria: "abaixo" | "normal" | "acima" | null;
 }
 /** Resultado de cruzar o % de gordura da avaliação física com a
  *  classificação de IMC já calculada — ver

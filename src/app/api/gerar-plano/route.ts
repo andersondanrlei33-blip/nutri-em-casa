@@ -3,7 +3,19 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { gerarResultadoAvaliacao } from "@/lib/nutrition/calculations";
 import { gerarPlanoAlimentar } from "@/lib/nutrition/mealPlanGenerator";
-import type { AvaliacaoNutricional, Receita } from "@/types/domain";
+import { extrairAvaliacaoFisica, type TipoImagemAceito } from "@/lib/nutrition/avaliacaoFisica";
+import type { AvaliacaoFisicaExtraida, AvaliacaoNutricional, Receita } from "@/types/domain";
+
+/** Deduz o media_type pelo nome do arquivo — o bucket guarda o arquivo mas
+ *  não o content-type separadamente, e o upload no cliente já restringe pra
+ *  esses 3 formatos (ver ConsultaWizard.tsx::TIPOS_ARQUIVO_ACEITOS). */
+function tipoImagemPeloNome(nome: string): TipoImagemAceito | null {
+  const extensao = nome.toLowerCase().split(".").pop();
+  if (extensao === "png") return "image/png";
+  if (extensao === "webp") return "image/webp";
+  if (extensao === "jpg" || extensao === "jpeg") return "image/jpeg";
+  return null;
+}
 
 const CorpoSchema = z.object({
   peso_kg: z.number().positive(),
@@ -85,6 +97,13 @@ const CorpoSchema = z.object({
   perda_peso_nao_intencional: z.string().nullable().optional(), // gera aviso automático
   ganho_peso_nao_intencional: z.string().nullable().optional(), // gera aviso automático
   como_conheceu: z.string().nullable().optional(),
+  // Caminho do arquivo já enviado pro bucket avaliacoes-fisicas pelo
+  // ConsultaWizard (ver enviarArquivoAvaliacaoFisica) — aqui só chega a
+  // referência, o upload em si já aconteceu antes de "Finalizar consulta".
+  // Opcional na 1ª consulta, mas validamos abaixo que veio preenchido numa
+  // consulta de retorno (regra de negócio pedida pela nutricionista).
+  avaliacao_fisica_arquivo_url: z.string().nullable().optional(),
+  avaliacao_fisica_arquivo_nome: z.string().nullable().optional(),
 });
 
 /** Idade calculada a partir da data de nascimento salva no perfil — mesma
@@ -155,6 +174,39 @@ export async function POST(request: Request) {
     .select("id", { count: "exact", head: true })
     .eq("usuario_id", user.id);
   const numeroConsulta = (consultasAnteriores ?? 0) + 1;
+  const retorno = numeroConsulta > 1;
+
+  // Regra de negócio: avaliação física é opcional na 1ª consulta, mas
+  // obrigatória numa consulta de retorno (mesma regra aplicada no cliente
+  // em ConsultaWizard.tsx::ehObrigatoria — repetida aqui porque é a
+  // validação que realmente importa, o cliente só evita uma ida e volta
+  // desnecessária).
+  if (retorno && !dados.avaliacao_fisica_arquivo_url) {
+    return NextResponse.json(
+      { erro: "Nas consultas de retorno, é preciso anexar uma avaliação física atualizada." },
+      { status: 400 }
+    );
+  }
+
+  // Lê a avaliação física anexada (quando houver) com a IA — extração pura,
+  // sem nenhuma decisão clínica aqui (isso é avaliarComposicaoCorporal,
+  // chamada dentro de gerarResultadoAvaliacao). Qualquer falha na leitura
+  // (arquivo ilegível, formato inesperado, erro de rede) não trava a
+  // consulta: o arquivo já está salvo no bucket e a pessoa segue sem os
+  // dados estruturados, exatamente como se não tivesse anexado nada.
+  let avaliacaoFisicaDados: AvaliacaoFisicaExtraida | null = null;
+  if (dados.avaliacao_fisica_arquivo_url) {
+    const mediaType = tipoImagemPeloNome(dados.avaliacao_fisica_arquivo_nome ?? dados.avaliacao_fisica_arquivo_url);
+    if (mediaType) {
+      const { data: arquivoBaixado } = await supabase.storage
+        .from("avaliacoes-fisicas")
+        .download(dados.avaliacao_fisica_arquivo_url);
+      if (arquivoBaixado) {
+        const base64 = Buffer.from(await arquivoBaixado.arrayBuffer()).toString("base64");
+        avaliacaoFisicaDados = await extrairAvaliacaoFisica(base64, mediaType);
+      }
+    }
+  }
 
   const resultado = gerarResultadoAvaliacao({
     pesoKg: dados.peso_kg,
@@ -192,6 +244,7 @@ export async function POST(request: Request) {
     disposicaoTarde: dados.disposicao_tarde,
     disposicaoNoite: dados.disposicao_noite,
     numeroConsulta,
+    avaliacaoFisicaDados,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase
@@ -269,6 +322,9 @@ export async function POST(request: Request) {
       perda_peso_nao_intencional: dados.perda_peso_nao_intencional || null,
       ganho_peso_nao_intencional: dados.ganho_peso_nao_intencional || null,
       como_conheceu: dados.como_conheceu || null,
+      avaliacao_fisica_arquivo_url: dados.avaliacao_fisica_arquivo_url || null,
+      avaliacao_fisica_arquivo_nome: dados.avaliacao_fisica_arquivo_nome || null,
+      avaliacao_fisica_dados: avaliacaoFisicaDados,
     })
     .select()
     .single();

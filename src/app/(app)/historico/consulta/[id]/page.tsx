@@ -76,18 +76,7 @@ export default async function DetalheConsultaPage({ params }: { params: Promise<
             {avaliacao.avaliacao_fisica_arquivo_nome && (
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 shrink-0 text-brand-600" />
-                {linkArquivoAvaliacaoFisica ? (
-                  
-                    href={linkArquivoAvaliacaoFisica}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-brand-700 underline hover:text-brand-800"
-                  >
-                    {avaliacao.avaliacao_fisica_arquivo_nome}
-                  </a>
-                ) : (
-                  <span>{avaliacao.avaliacao_fisica_arquivo_nome}</span>
-                )}
+                <LinkArquivoAvaliacaoFisica url={linkArquivoAvaliacaoFisica} nome={avaliacao.avaliacao_fisica_arquivo_nome} />
               </div>
             )}
             {avaliacao.avaliacao_fisica_dados?.percentualGordura != null && (
@@ -133,4 +122,13 @@ function Metrica({ label, valor, sub }: { label: string; valor: string; sub?: st
       {sub && <p className="text-xs text-muted">{sub}</p>}
     </div>
   );
+}
+
+/** Isolado num componente à parte, com tag numa linha só, pra ficar mais
+ *  simples de colar sem perder linha (o link com 4 atributos em linhas
+ *  separadas deu problema ao colar no editor do GitHub). */
+function LinkArquivoAvaliacaoFisica({ url, nome }: { url: string | null; nome: string }) {
+  if (!url) return <span>{nome}</span>;
+  const props = { href: url, target: "_blank", rel: "noopener noreferrer", className: "text-brand-700 underline hover:text-brand-800" };
+  return <a {...props}>{nome}</a>;
 }

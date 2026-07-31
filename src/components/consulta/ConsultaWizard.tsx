@@ -97,10 +97,12 @@ interface Pergunta {
   detalhePlaceholder?: string;
   /** Placeholder pra perguntas de texto livre. */
   placeholder?: string;
+  /** Quando definida, a pergunta só aparece se retornar true — usada pra
+   *  horário de treino / pré-pós-treino, que só fazem sentido pra quem não é
+   *  sedentário (ver PERGUNTAS abaixo). */
+  condicao?: (respostas: RespostasConsulta) => boolean;
 }
 interface RespostasConsulta {
-  idade: string;
-  genero: Genero | "";
   objetivo: ObjetivoNutricional | "";
   tipo_suporte_esperado: string;
   tabagismo: StatusTabagismo | "";
@@ -136,6 +138,8 @@ interface RespostasConsulta {
   preferencia_sabor: string[];
   frequencia_restaurante: string;
   historico_dietetico: string;
+  horario_treino: string;
+  quer_pre_pos_treino: boolean | null;
   altura_cm: string;
   peso_kg: string;
   situacoes_especiais: string[];
@@ -146,7 +150,7 @@ interface RespostasConsulta {
   observacoes: string;
 }
 const INICIAL: RespostasConsulta = {
-  idade: "", genero: "", objetivo: "", tipo_suporte_esperado: "",
+  objetivo: "", tipo_suporte_esperado: "",
   tabagismo: "", consumo_alcool: "", nivel_atividade: "", horas_sono: "", qualidade_sono_categoria: "",
   insonia: null, medicacao_sono: "", disposicao_manha: "", disposicao_tarde: "", disposicao_noite: "",
   concentracao: "", memoria_recente: "", memoria_antiga: "", nivel_estresse_categoria: "",
@@ -154,13 +158,12 @@ const INICIAL: RespostasConsulta = {
   alergias: "", medicamentos_em_uso: "", suplementos_em_uso: "", dieta_anterior: "",
   ingestao_agua_copos: "", quem_prepara_comida: "", refeicao_sozinho_ou_acompanhado: "",
   horario_mais_fome: [], mastigacao: "", alimento_favorito: "", alimento_rejeitado: "",
-  preferencia_sabor: [], frequencia_restaurante: "", historico_dietetico: "", altura_cm: "",
+  preferencia_sabor: [], frequencia_restaurante: "", historico_dietetico: "", horario_treino: "",
+  quer_pre_pos_treino: null, altura_cm: "",
   peso_kg: "", situacoes_especiais: [], peso_meta_kg: "", perda_peso_nao_intencional: "",
   ganho_peso_nao_intencional: "", como_conheceu: "", observacoes: "",
 };
 const PERGUNTAS: Pergunta[] = [
-  { id: 3, campo: "idade", texto: "Idade", tipo: "numero", obrigatoria: true },
-  { id: 4, campo: "genero", texto: "Gênero", tipo: "single", obrigatoria: true, opcoes: ["Feminino", "Masculino", "Outro"], mapa: { Feminino: "feminino", Masculino: "masculino", Outro: "outro" } },
   { id: 5, campo: "objetivo", texto: "Qual é o seu objetivo principal?", tipo: "single", obrigatoria: true,
     opcoes: ["Emagrecimento", "Manutenção do peso", "Ganho de massa muscular", "Saúde geral", "Performance esportiva"],
     mapa: { "Emagrecimento": "emagrecimento", "Manutenção do peso": "manutencao", "Ganho de massa muscular": "ganho_massa", "Saúde geral": "saude_geral", "Performance esportiva": "performance_esportiva" } },
@@ -175,6 +178,15 @@ const PERGUNTAS: Pergunta[] = [
   { id: 9, campo: "nivel_atividade", texto: "Qual o seu nível de atividade física?", tipo: "dropdown", obrigatoria: true,
     opcoes: ["Sedentário (pouco ou nenhum exercício)", "Leve (exercício 1-3x/semana)", "Moderado (exercício 3-5x/semana)", "Intenso (exercício 6-7x/semana)", "Atleta (muito intenso)"],
     mapa: { "Sedentário (pouco ou nenhum exercício)": "sedentario", "Leve (exercício 1-3x/semana)": "leve", "Moderado (exercício 3-5x/semana)": "moderado", "Intenso (exercício 6-7x/semana)": "intenso", "Atleta (muito intenso)": "atleta" } },
+  // Só aparecem pra quem não é sedentário — pra quem é, essas perguntas nem
+  // existem no fluxo (ver perguntasVisiveis mais abaixo).
+  { id: 47, campo: "horario_treino", texto: "Em que horário você costuma treinar?", tipo: "single", obrigatoria: true,
+    opcoes: ["Manhã", "Tarde", "Noite", "Varia bastante"],
+    condicao: (r) => r.nivel_atividade !== "" && r.nivel_atividade !== "sedentario" },
+  { id: 48, campo: "quer_pre_pos_treino", texto: "Gostaria de incluir refeições de pré-treino e pós-treino no seu plano alimentar?",
+    hint: "Ajuda a repor energia antes do treino e recuperar depois, na hora certa.",
+    tipo: "single", obrigatoria: true, opcoes: ["Sim", "Não"], mapa: { Sim: true, "Não": false },
+    condicao: (r) => r.nivel_atividade !== "" && r.nivel_atividade !== "sedentario" },
   { id: 10, campo: "horas_sono", texto: "Costuma dormir quantas horas por noite?", tipo: "single", obrigatoria: true, opcoes: ["< 4 horas", "4 a 6 horas", "6 a 8 horas", "> 8 horas"] },
   { id: 11, campo: "qualidade_sono_categoria", texto: "Como você considera o seu sono?", tipo: "single", obrigatoria: true, opcoes: ["Bom", "Regular", "Ruim"] },
   { id: 12, campo: "insonia", texto: "Tem insônia?", tipo: "single", obrigatoria: true, opcoes: ["Sim", "Não"], mapa: { Sim: true, "Não": false } },
@@ -224,6 +236,19 @@ function paraLista(texto: string): string[] {
 function numeroDaFaixa(valor: string): number {
   return Number(valor.replace(/[^\d.]/g, ""));
 }
+/** Idade calculada a partir da data de nascimento do perfil — gênero e
+ *  idade não são mais perguntados aqui, vêm do cadastro (ver CadastroPage.tsx
+ *  e página "Meu Perfil"), pra não pedir a mesma informação duas vezes. */
+function calcularIdade(dataNascimentoISO: string): number {
+  const nascimento = new Date(dataNascimentoISO);
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+  const aindaNaoFezAniversarioEsseAno =
+    hoje.getMonth() < nascimento.getMonth() ||
+    (hoje.getMonth() === nascimento.getMonth() && hoje.getDate() < nascimento.getDate());
+  if (aindaNaoFezAniversarioEsseAno) idade--;
+  return idade;
+}
 /** Numa consulta de retorno, pré-preenche TODOS os campos que existem tanto
  *  na avaliação anterior quanto no formulário atual — não só os básicos
  *  (peso/altura/idade/gênero), mas a anamnese inteira, pra a pessoa não
@@ -255,8 +280,6 @@ function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsul
           : "";
   return {
     ...base,
-    idade: String(anterior.idade),
-    genero: anterior.genero,
     objetivo: anterior.objetivo,
     tipo_suporte_esperado: anterior.tipo_suporte_esperado ?? "",
     tabagismo: anterior.tabagismo ?? "",
@@ -292,6 +315,8 @@ function estadoInicialDe(anterior: AvaliacaoNutricional | null): RespostasConsul
     preferencia_sabor: anterior.preferencia_sabor,
     frequencia_restaurante: anterior.frequencia_restaurante ?? "",
     historico_dietetico: anterior.historico_dietetico ?? "",
+    horario_treino: anterior.horario_treino ?? "",
+    quer_pre_pos_treino: anterior.quer_pre_pos_treino,
     altura_cm: `${anterior.altura_cm} cm`,
     peso_kg: `${anterior.peso_kg} kg`,
     peso_meta_kg: anterior.peso_meta_kg != null ? String(anterior.peso_meta_kg) : "",
@@ -339,21 +364,25 @@ function escolhasIniciaisDe(respostas: RespostasConsulta): Record<number, string
 }
 export function ConsultaWizard({
   avaliacaoAnterior,
-  nomePaciente,
+  perfil,
 }: {
   avaliacaoAnterior: AvaliacaoNutricional | null;
-  /** Nome completo do paciente — usado só pra identificar de quem é a
-   *  condição de saúde na lista de "Pontos que merecem mais atenção",
-   *  já que o app às vezes é revisado por outra pessoa (ex: nutricionista
-   *  acompanhando vários pacientes) e o nome evita qualquer ambiguidade
-   *  em algo tão sensível quanto diabetes/hipertensão/etc. */
-  nomePaciente?: string | null;
+  /** Gênero e data de nascimento vêm do cadastro/"Meu Perfil" — a tela que
+   *  renderiza esse componente já garante que os dois estão preenchidos
+   *  antes de chegar aqui (ver consulta/page.tsx), então não são perguntados
+   *  de novo em toda consulta. */
+  perfil: { genero: Genero; dataNascimento: string };
 }) {
   const router = useRouter();
   const retorno = Boolean(avaliacaoAnterior);
+  const idade = useMemo(() => calcularIdade(perfil.dataNascimento), [perfil.dataNascimento]);
   const [indice, setIndice] = useState(-1); // -1 = intro
   const [respostas, setRespostas] = useState<RespostasConsulta>(() => estadoInicialDe(avaliacaoAnterior));
   const [escolhas, setEscolhas] = useState<Record<number, string>>(() => escolhasIniciaisDe(estadoInicialDe(avaliacaoAnterior)));
+  const perguntasVisiveis = useMemo(
+    () => PERGUNTAS.filter((p) => !p.condicao || p.condicao(respostas)),
+    [respostas]
+  );
   const [enviando, setEnviando] = useState(false);
   const [resultadoFinal, setResultadoFinal] = useState<null | {
     observacoes: string;
@@ -361,35 +390,46 @@ export function ConsultaWizard({
     resumo: string;
     avisoMetaPeso: string | null;
     relatorio: RelatorioConsulta | null;
+    // Valores REAIS calculados e salvos pelo servidor — nunca reaproveitar o
+    // `preview` calculado no navegador aqui: o preview é só uma prévia
+    // rápida enquanto a pessoa responde, e não recebe campos como histórico
+    // de cirurgias ou "outra condição" em texto livre (que podem travar a
+    // meta em manutenção via condição clínica complexa). Usar o preview na
+    // tela final já mostrou uma meta calórica maior do que a que foi de
+    // fato salva e usada pra montar o plano — número errado bem na tela
+    // mais importante da consulta.
+    imc: number;
+    classificacaoImc: string;
+    tmb: number;
+    tdee: number;
+    metaCalorica: number;
   }>(null);
-  const pergunta = indice >= 0 && indice < PERGUNTAS.length ? PERGUNTAS[indice] : null;
+  const pergunta = indice >= 0 && indice < perguntasVisiveis.length ? perguntasVisiveis[indice] : null;
   function set<K extends keyof RespostasConsulta>(campo: K, valor: RespostasConsulta[K]) {
     setRespostas((prev) => ({ ...prev, [campo]: valor }));
   }
   // Opções da pergunta atual, já filtradas pro contexto do paciente — hoje
   // só usada pra tirar "Estou grávida"/"Estou amamentando" de quem marcou
-  // gênero masculino, mas serve de ponto único caso surjam outros casos
-  // parecidos no futuro.
+  // gênero masculino no perfil, mas serve de ponto único caso surjam outros
+  // casos parecidos no futuro.
   const opcoesPergunta = useMemo(() => {
     if (!pergunta?.opcoes) return pergunta?.opcoes;
-    if (pergunta.campo === "situacoes_especiais" && respostas.genero === "masculino") {
+    if (pergunta.campo === "situacoes_especiais" && perfil.genero === "masculino") {
       return pergunta.opcoes.filter((o) => !OPCOES_SO_GESTACAO.includes(o));
     }
     return pergunta.opcoes;
-  }, [pergunta, respostas.genero]);
+  }, [pergunta, perfil.genero]);
   const podeVerPreview =
     Number(respostas.peso_kg && numeroDaFaixa(respostas.peso_kg)) > 0 &&
-    Number(respostas.altura_cm && numeroDaFaixa(respostas.altura_cm)) > 0 &&
-    Number(respostas.idade) > 0 &&
-    !!respostas.genero;
+    Number(respostas.altura_cm && numeroDaFaixa(respostas.altura_cm)) > 0;
   const preview = useMemo(() => {
     if (!podeVerPreview) return null;
     try {
       return gerarResultadoAvaliacao({
         pesoKg: numeroDaFaixa(respostas.peso_kg),
         alturaCm: numeroDaFaixa(respostas.altura_cm),
-        idade: Number(respostas.idade),
-        genero: respostas.genero as Genero,
+        idade,
+        genero: perfil.genero,
         nivelAtividade: (respostas.nivel_atividade || "leve") as NivelAtividade,
         objetivo: (respostas.objetivo || "manutencao") as ObjetivoNutricional,
         gestante: respostas.situacoes_especiais.includes("Estou grávida"),
@@ -402,7 +442,7 @@ export function ConsultaWizard({
     } catch {
       return null;
     }
-  }, [respostas, podeVerPreview]);
+  }, [respostas, podeVerPreview, idade, perfil.genero]);
   const diffPeso = useMemo(() => {
     if (!avaliacaoAnterior || !respostas.peso_kg) return null;
     const diferenca = numeroDaFaixa(respostas.peso_kg) - avaliacaoAnterior.peso_kg;
@@ -425,9 +465,6 @@ export function ConsultaWizard({
   }
   function validarPerguntaAtual(): string | null {
     if (!pergunta) return null;
-    if (pergunta.campo === "idade" && respostas.idade && Number(respostas.idade) < 18) {
-      return "O Nutri em Casa é destinado a maiores de 18 anos. Menores de idade devem buscar acompanhamento nutricional presencial com um profissional especializado.";
-    }
     if (!respondida(pergunta)) {
       return pergunta.tipo === "multi" ? "Selecione ao menos uma opção pra continuar." : "Essa pergunta é obrigatória — responda pra continuar.";
     }
@@ -439,7 +476,7 @@ export function ConsultaWizard({
       toast.erro(erro);
       return;
     }
-    if (indice + 1 >= PERGUNTAS.length) {
+    if (indice + 1 >= perguntasVisiveis.length) {
       finalizarConsulta();
       return;
     }
@@ -451,17 +488,6 @@ export function ConsultaWizard({
   function escolherSingle(p: Pergunta, label: string) {
     setEscolhas((prev) => ({ ...prev, [p.id]: label }));
     const valorReal = p.mapa ? p.mapa[label] : label;
-    // Gênero masculino não deveria carregar respostas de gravidez/amamentação
-    // de uma tentativa anterior — limpa junto, sem esperar o paciente voltar
-    // na pergunta de situações especiais pra corrigir manualmente.
-    if (p.campo === "genero" && valorReal === "masculino") {
-      setRespostas((prev) => ({
-        ...prev,
-        genero: valorReal as Genero,
-        situacoes_especiais: prev.situacoes_especiais.filter((s) => !OPCOES_SO_GESTACAO.includes(s)),
-      }));
-      return;
-    }
     set(p.campo, valorReal as never);
   }
   function escolherSingleDetail(p: Pergunta, label: string) {
@@ -497,8 +523,9 @@ export function ConsultaWizard({
     return {
       peso_kg: numeroDaFaixa(respostas.peso_kg),
       altura_cm: numeroDaFaixa(respostas.altura_cm),
-      idade: Number(respostas.idade),
-      genero: respostas.genero as Genero,
+      // idade e gênero não são mais enviados daqui — o servidor busca do
+      // perfil (route.ts), pra não confiar em nada calculável no navegador
+      // pra um dado que entra direto na fórmula de TMB/TDEE.
       nivel_atividade: respostas.nivel_atividade as NivelAtividade,
       objetivo: respostas.objetivo as ObjetivoNutricional,
       peso_meta_kg: respostas.peso_meta_kg ? Number(respostas.peso_meta_kg) : null,
@@ -545,6 +572,8 @@ export function ConsultaWizard({
       preferencia_sabor: respostas.preferencia_sabor,
       frequencia_restaurante: respostas.frequencia_restaurante || null,
       historico_dietetico: respostas.historico_dietetico || null,
+      horario_treino: respostas.horario_treino || null,
+      quer_pre_pos_treino: respostas.quer_pre_pos_treino,
       perda_peso_nao_intencional: respostas.perda_peso_nao_intencional || null,
       ganho_peso_nao_intencional: respostas.ganho_peso_nao_intencional || null,
       como_conheceu: respostas.como_conheceu || null,
@@ -566,6 +595,14 @@ export function ConsultaWizard({
         resumo: dados.resumoConsulta ?? "",
         avisoMetaPeso: dados.avisoMetaPeso ?? null,
         relatorio: dados.relatorio ?? null,
+        // Vem da avaliação já salva no banco (dados.avaliacao) — já passou
+        // pela trava de condição clínica complexa no servidor, diferente do
+        // `preview` calculado no navegador enquanto a pessoa respondia.
+        imc: dados.avaliacao.imc,
+        classificacaoImc: dados.avaliacao.classificacao_imc,
+        tmb: dados.avaliacao.tmb,
+        tdee: dados.avaliacao.tdee,
+        metaCalorica: dados.avaliacao.meta_calorica,
       });
       toast.sucesso("Sua consulta foi concluída com sucesso!");
     } catch (erro) {
@@ -602,16 +639,14 @@ export function ConsultaWizard({
               <p>{resultadoFinal.avisoMetaPeso}</p>
             </div>
           )}
-          {preview && (
-            <div className="mt-4 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
-              <Metrica label="IMC" valor={preview.imc.toString()} sub={preview.classificacaoImc} />
-              <Metrica label="TMB" valor={`${preview.tmb} kcal`} />
-              <Metrica label="TDEE" valor={`${preview.tdee} kcal`} />
-              <Metrica label="Meta calórica" valor={`${preview.metaCalorica} kcal`} />
-            </div>
-          )}
+          <div className="mt-4 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
+            <Metrica label="IMC" valor={resultadoFinal.imc.toString()} sub={resultadoFinal.classificacaoImc} />
+            <Metrica label="TMB" valor={`${resultadoFinal.tmb} kcal`} />
+            <Metrica label="TDEE" valor={`${resultadoFinal.tdee} kcal`} />
+            <Metrica label="Meta calórica" valor={`${resultadoFinal.metaCalorica} kcal`} />
+          </div>
           {resultadoFinal.relatorio ? (
-            <RelatorioEmCartoes relatorio={resultadoFinal.relatorio} nomePaciente={nomePaciente} />
+            <RelatorioEmCartoes relatorio={resultadoFinal.relatorio} />
           ) : (
             resultadoFinal.resumo && (
               <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-left text-sm leading-relaxed text-foreground">
@@ -659,7 +694,7 @@ export function ConsultaWizard({
     );
   }
   if (!pergunta) return null;
-  const progresso = Math.round(((indice + 1) / PERGUNTAS.length) * 100);
+  const progresso = Math.round(((indice + 1) / perguntasVisiveis.length) * 100);
   const opcaoAtual = escolhas[pergunta.id];
   const mostrarDetalhe = pergunta.tipo === "single_detail" && opcaoAtual === pergunta.detalheObrigatorioSe;
   return (
@@ -668,7 +703,7 @@ export function ConsultaWizard({
         <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${progresso}%` }} />
       </div>
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-600">
-        Pergunta {indice + 1} de {PERGUNTAS.length}
+        Pergunta {indice + 1} de {perguntasVisiveis.length}
       </p>
       <Card>
         <CardContent className="py-8 animate-fade-in-up">
@@ -688,7 +723,7 @@ export function ConsultaWizard({
             {pergunta.tipo === "numero" && (
               <Input
                 type="number"
-                min={pergunta.campo === "idade" ? 18 : 1}
+                min={1}
                 step={pergunta.campo === "peso_meta_kg" ? "0.1" : "1"}
                 value={(respostas[pergunta.campo] as string) ?? ""}
                 onChange={(e) => set(pergunta.campo, e.target.value as never)}
@@ -782,7 +817,7 @@ export function ConsultaWizard({
           <ChevronLeft className="h-4 w-4" /> Voltar
         </Button>
         <Button onClick={avancar} carregando={enviando}>
-          {indice + 1 >= PERGUNTAS.length ? (enviando ? "Gerando seu plano..." : "Finalizar consulta") : (
+          {indice + 1 >= perguntasVisiveis.length ? (enviando ? "Gerando seu plano..." : "Finalizar consulta") : (
             <>Próxima <ChevronRight className="h-4 w-4" /></>
           )}
         </Button>
@@ -792,10 +827,8 @@ export function ConsultaWizard({
 }
 function RelatorioEmCartoes({
   relatorio,
-  nomePaciente,
 }: {
   relatorio: RelatorioConsulta;
-  nomePaciente?: string | null;
 }) {
   return (
     <div className="mt-4 space-y-4 text-left">
@@ -833,9 +866,6 @@ function RelatorioEmCartoes({
                   {ponto.prioridade}
                 </span>
                 {ponto.titulo}
-                {ponto.categoria === "condicao_saude" && nomePaciente && (
-                  <span className="text-muted"> — {nomePaciente}</span>
-                )}
               </li>
             ))}
           </ul>

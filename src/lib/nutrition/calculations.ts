@@ -1802,6 +1802,13 @@ function montarRelatorioConsulta(params: {
    *  houver — ver AvaliacaoFisicaExtraida. Null/undefined quando não há
    *  anexo ou a extração falhou. */
   avaliacaoFisicaDados?: AvaliacaoFisicaExtraida | null;
+  /** Texto de interpretação já pronto, gerado pelo motor de interpretação
+   *  (lib/avaliacaoFisica/) ANTES desta chamada — calculations.ts é
+   *  deliberadamente síncrono/puro (sem I/O), então quem chama esta função
+   *  (route.ts) já resolveu a parte assíncrona (que envolve a Biblioteca
+   *  Clínica) e só passa o resultado pronto pra cá. Null/undefined quando
+   *  não há avaliação física, ou o motor não gerou nada aproveitável. */
+  avaliacaoFisicaTextoMotor?: string | null;
 }): RelatorioConsulta {
   const numeroConsulta = params.numeroConsulta ?? 1;
 
@@ -1878,7 +1885,8 @@ function montarRelatorioConsulta(params: {
     composicaoCorporal: avaliarComposicaoCorporal(
       params.avaliacaoFisicaDados ?? null,
       params.classificacaoImc,
-      params.genero
+      params.genero,
+      params.avaliacaoFisicaTextoMotor ?? null
     ),
   };
 }
@@ -2065,6 +2073,10 @@ export function gerarResultadoAvaliacao(
     // quando houver (ver lib/nutrition/avaliacaoFisica.ts). Opcional/null
     // quando não há anexo ou a extração falhou.
     avaliacaoFisicaDados?: AvaliacaoFisicaExtraida | null;
+    // Texto de interpretação já pronto vindo do motor novo (lib/avaliacaoFisica/),
+    // calculado de forma assíncrona em route.ts antes desta chamada — ver
+    // comentário em montarRelatorioConsulta.
+    avaliacaoFisicaTextoMotor?: string | null;
   } & CondicaoEspecial
 ): ResultadoAvaliacao {
   const imc = calcularIMC(dados);
@@ -2219,6 +2231,7 @@ export function gerarResultadoAvaliacao(
     numeroConsulta: dados.numeroConsulta,
     genero: dados.genero,
     avaliacaoFisicaDados: dados.avaliacaoFisicaDados,
+    avaliacaoFisicaTextoMotor: dados.avaliacaoFisicaTextoMotor,
   });
 
   return {

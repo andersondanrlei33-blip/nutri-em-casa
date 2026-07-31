@@ -295,7 +295,7 @@ export async function POST(request: Request) {
 
   // Biblioteca de receitas disponível pro paciente (globais + próprias),
   // usada pelo gerador pra vincular refeições reais em vez de texto solto —
-  // isso também é o que faz a Lista de Compras funcionar automaticamente.
+  // é isso que permite calcular calorias/macros automaticamente por refeição.
   const { data: receitasDisponiveis } = await supabase
     .from("receitas")
     .select("*")

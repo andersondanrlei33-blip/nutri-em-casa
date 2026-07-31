@@ -11,6 +11,7 @@ import {
   normalizar,
   INDICACOES_SAUDE_VOCABULARIO,
   type FiltroReceitas,
+  type MetasRefeicao,
 } from "./receitaMatching";
 const DIAS: DiaSemana[] = [
   "segunda",
@@ -448,9 +449,15 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
   for (const dia of DIAS) {
     templates.forEach((template) => {
       const caloriasAlvo = Math.round(avaliacao.meta_calorica * template.percentual);
+      const metasRefeicao: MetasRefeicao = {
+        calorias: caloriasAlvo,
+        proteinaG: Math.round(avaliacao.meta_proteina_g * template.percentual),
+        carboidratoG: Math.round(avaliacao.meta_carboidrato_g * template.percentual),
+        gorduraG: Math.round(avaliacao.meta_gordura_g * template.percentual),
+      };
       const candidatas = filtrarReceitasCompativeis(receitasDisponiveis, template.categoria, filtro);
       const usadas = usadasPorCategoria.get(template.categoria) ?? new Set<string>();
-      const escolhida = escolherReceita(candidatas, caloriasAlvo, usadas);
+      const escolhida = escolherReceita(candidatas, metasRefeicao, usadas);
       if (escolhida) {
         usadas.add(escolhida.id);
         usadasPorCategoria.set(template.categoria, usadas);

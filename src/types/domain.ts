@@ -172,6 +172,12 @@ export interface AvaliacaoNutricional {
   perda_peso_nao_intencional: string | null;
   ganho_peso_nao_intencional: string | null;
   como_conheceu: string | null;
+  /** Texto explicando as escolhas do plano alimentar gerado junto com essa
+   *  consulta (mealPlanGenerator.ts::observacoes_nutricionista) — salvo pra
+   *  o Histórico mostrar exatamente o mesmo texto exibido na hora, em vez de
+   *  ele se perder depois da tela de resultado. Null em consultas anteriores
+   *  a essa coluna. */
+  observacoes_plano: string | null;
 }
 export interface Receita {
   id: string;

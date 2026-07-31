@@ -171,6 +171,30 @@ async function classificarCondicaoLivre(texto: string): Promise<IndicacaoSaudeRe
     return [];
   }
 }
+/** Categorias que representam uma refeição principal — uma sobremesa nunca
+ *  pode ser a refeição inteira nelas (só um extra depois, quando existir um
+ *  slot próprio pra isso — hoje nenhum molde de refeição pede a categoria
+ *  "sobremesa", ver escolherTemplates). "lanche" fica de fora de propósito:
+ *  um lanche pode legitimamente ser algo mais doce. */
+const CATEGORIAS_REFEICAO_PRINCIPAL: CategoriaReceita[] = ["cafe_da_manha", "almoco", "jantar"];
+/**
+ * Detecta quando o texto livre que a IA escreveu pra uma refeição (sem
+ * receita_id vinculado) é, na prática, uma sobremesa da biblioteca — ex: a
+ * IA escreveu "Pudim de leite" como o jantar inteiro de um dia, pra tentar
+ * "atender a preferência" do paciente, mesmo sem nenhum molde de refeição
+ * pedir a categoria sobremesa (ela nunca poderia ter vindo de um receita_id
+ * válido pra "jantar"). Comparação por nome (primeira palavra significativa)
+ * contra as sobremesas reais da biblioteca, não por uma lista de palavras
+ * fixa — mesma fonte de verdade usada em notaSobrePreferenciasNaoAtendidas.
+ */
+function ehTextoDeSobremesa(descricao: string, nomeRefeicao: string, receitasDisponiveis: Receita[]): boolean {
+  const nomesSobremesa = receitasDisponiveis
+    .filter((r) => r.categoria === "sobremesa")
+    .map((r) => normalizar(r.nome).split(" ")[0])
+    .filter((palavra) => palavra.length >= 4);
+  const textoRefeicao = normalizar(`${nomeRefeicao} ${descricao}`);
+  return nomesSobremesa.some((palavra) => textoRefeicao.includes(palavra));
+}
 interface CandidataResumo {
   id: string;
   nome: string;
@@ -354,6 +378,9 @@ quando definir "receita_id", o campo "descricao" é OBRIGATÓRIO e nunca pode se
 ali o nome da receita escolhida.
 Se NENHUMA receita da lista servir para aquele horário/categoria, defina "receita_id" como null
 e escreva uma "descricao" simples que NÃO cite nenhum alimento presente nas alergias do paciente.
+Café da manhã, almoço e jantar são refeições principais e JAMAIS podem ser substituídas por uma
+sobremesa/doce (ex: pudim, brigadeiro, bolo, mousse) — mesmo pra tentar atender uma preferência do
+paciente. Doce nunca é a refeição inteira.
 IMPORTANTE: o campo "dia_semana" deve ser exatamente um destes valores, SEM acento: "segunda",
 "terca", "quarta", "quinta", "sexta", "sabado", "domingo".
 Responda APENAS com um JSON válido no formato:
@@ -441,6 +468,19 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
     if (!receitaIdValido && textoContemAlergiaDoUsuario(refeicao.descricao, avaliacao.alergias)) {
       throw new Error(
         `IA sugeriu refeição de texto livre mencionando possível alergia do paciente ("${refeicao.descricao}") — descartando plano por segurança.`
+      );
+    }
+    // Doce nunca pode ser a refeição principal inteira (só um extra depois
+    // dela, quando existir um jeito estruturado de incluir isso) — cai no
+    // fallback determinístico, que nunca comete esse erro porque só escolhe
+    // receitas da própria categoria pedida (jantar nunca vira sobremesa lá).
+    if (
+      !receitaIdValido &&
+      CATEGORIAS_REFEICAO_PRINCIPAL.includes(refeicao.categoria) &&
+      ehTextoDeSobremesa(refeicao.descricao, refeicao.nome_refeicao, receitasDisponiveis)
+    ) {
+      throw new Error(
+        `IA colocou uma sobremesa ("${refeicao.nome_refeicao}") como refeição principal (${refeicao.categoria}) — descartando plano por segurança nutricional.`
       );
     }
     let quantidadePorcoes = refeicao.quantidade_porcoes ?? 1;

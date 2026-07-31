@@ -1931,7 +1931,7 @@ function elogiarRotinaAlimentar(frequenciaRestaurante: string | null | undefined
 
 const TEXTOS_CONDICAO: Partial<Record<CondicaoSaude, { titulo: string; textos: string[]; prioridade: number }>> = {
   diabetes_tipo1: {
-    titulo: "Diabetes",
+    titulo: "Diabetes tipo 1",
     prioridade: 2,
     textos: [
       "Um dos pontos que pede atenção especial é o controle da diabetes. Vamos cuidar da distribuição dos carboidratos ao longo do dia para ajudar a manter sua glicemia mais estável — o acompanhamento com seu médico continua sendo essencial junto com a alimentação.",
@@ -1942,7 +1942,7 @@ const TEXTOS_CONDICAO: Partial<Record<CondicaoSaude, { titulo: string; textos: s
     ],
   },
   diabetes_tipo2: {
-    titulo: "Diabetes",
+    titulo: "Diabetes tipo 2",
     prioridade: 2,
     textos: [
       "Um dos pontos que pede atenção especial é o controle da diabetes. Vamos cuidar da distribuição dos carboidratos ao longo do dia para ajudar a manter sua glicemia mais estável — o acompanhamento com seu médico continua sendo essencial junto com a alimentação.",

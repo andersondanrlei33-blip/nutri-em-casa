@@ -74,6 +74,7 @@ export default async function ConsultaPage() {
       <ConsultaWizard
         avaliacaoAnterior={avaliacaoAnterior}
         perfil={{ genero: perfil!.genero!, dataNascimento: perfil!.data_nascimento! }}
+        usuarioId={user!.id}
       />
     </div>
   );

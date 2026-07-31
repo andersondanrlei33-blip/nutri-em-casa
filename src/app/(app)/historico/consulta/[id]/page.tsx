@@ -83,7 +83,11 @@ export default async function DetalheConsultaPage({ params }: { params: Promise<
   );
 }
 
-function RelatorioEmCartoes({ relatorio }: { relatorio: RelatorioConsulta }) {
+function RelatorioEmCartoes({
+  relatorio,
+}: {
+  relatorio: RelatorioConsulta;
+}) {
   return (
     <div className="mt-6 space-y-5">
       {relatorio.resumoGeral && (

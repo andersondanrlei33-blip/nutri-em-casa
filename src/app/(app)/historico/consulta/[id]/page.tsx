@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Stethoscope } from "lucide-react";
+import { ChevronLeft, Stethoscope, CheckCircle2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/Card";
 import { formatarData } from "@/lib/utils/date";
-import type { AvaliacaoNutricional } from "@/types/domain";
+import type { AvaliacaoNutricional, RelatorioConsulta } from "@/types/domain";
 
 export default async function DetalheConsultaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,10 +25,11 @@ export default async function DetalheConsultaPage({ params }: { params: Promise<
 
   if (!data) notFound();
   const avaliacao = data as AvaliacaoNutricional;
+  const relatorio = avaliacao.relatorio;
 
-  // Consultas antigas (antes da coluna "resumo" existir) caem de volta pro
-  // texto de avisos que já era salvo — nunca ficam sem nenhum resumo.
-  const textoResumo = avaliacao.resumo ?? avaliacao.ajuste_seguranca;
+  // Consultas antigas (de antes do relatório em cartões existir) caem de
+  // volta pro texto corrido que já era salvo — nunca ficam sem nenhum resumo.
+  const textoResumoAntigo = avaliacao.resumo ?? avaliacao.ajuste_seguranca;
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -58,14 +59,18 @@ export default async function DetalheConsultaPage({ params }: { params: Promise<
         <Metrica label="Água" valor={`${(avaliacao.meta_agua_ml / 1000).toFixed(1)} L`} />
       </div>
 
-      {textoResumo && (
-        <Card className="mt-6">
-          <CardContent className="space-y-3 text-sm leading-relaxed text-foreground">
-            {textoResumo.split("\n\n").map((paragrafo, i) => (
-              <p key={i}>{paragrafo}</p>
-            ))}
-          </CardContent>
-        </Card>
+      {relatorio ? (
+        <RelatorioEmCartoes relatorio={relatorio} />
+      ) : (
+        textoResumoAntigo && (
+          <Card className="mt-6">
+            <CardContent className="space-y-3 text-sm leading-relaxed text-foreground">
+              {textoResumoAntigo.split("\n\n").map((paragrafo, i) => (
+                <p key={i}>{paragrafo}</p>
+              ))}
+            </CardContent>
+          </Card>
+        )
       )}
 
       {avaliacao.observacoes && (
@@ -78,12 +83,140 @@ export default async function DetalheConsultaPage({ params }: { params: Promise<
   );
 }
 
+function RelatorioEmCartoes({ relatorio }: { relatorio: RelatorioConsulta }) {
+  return (
+    <div className="mt-6 space-y-5">
+      {relatorio.resumoGeral && (
+        <Card>
+          <CardContent className="text-sm leading-relaxed text-foreground">
+            <p>{relatorio.resumoGeral}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {relatorio.avisoMetaPeso && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm leading-relaxed text-red-800">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-600">Aviso de segurança</p>
+          <p>{relatorio.avisoMetaPeso}</p>
+        </div>
+      )}
+
+      {relatorio.pontosFortes.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-600">
+            O que você já faz muito bem
+          </h2>
+          <ul className="space-y-2">
+            {relatorio.pontosFortes.map((texto, i) => (
+              <li key={i} className="flex items-start gap-2 rounded-xl bg-brand-50 px-4 py-2.5 text-sm text-foreground">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+                <span>{texto}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {relatorio.pontosAtencao.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Pontos que merecem mais atenção
+          </h2>
+          <ul className="space-y-1.5">
+            {relatorio.pontosAtencao.map((ponto) => (
+              <li key={ponto.chave} className="flex items-center gap-2.5 rounded-lg bg-amber-50 px-3.5 py-2 text-sm text-foreground">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-400 text-[11px] font-bold text-white">
+                  {ponto.prioridade}
+                </span>
+                {ponto.titulo}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {relatorio.condicoesSaude.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Condições de Saúde</h2>
+          <div className="space-y-2">
+            {relatorio.condicoesSaude.map((c) => (
+              <BlocoTexto key={c.chave} titulo={c.titulo} texto={c.texto} corBorda="border-red-300" bg="bg-red-50/60" />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {relatorio.habitosVida.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Hábitos de Vida</h2>
+          <div className="space-y-2">
+            {relatorio.habitosVida.map((h) => (
+              <BlocoTexto key={h.chave} titulo={h.titulo} texto={h.texto} corBorda="border-amber-300" bg="bg-amber-50/60" />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {relatorio.alimentacao && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Alimentação</h2>
+          <Card>
+            <CardContent className="text-sm leading-relaxed text-foreground">
+              <p>{relatorio.alimentacao}</p>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      {relatorio.prioridades.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Próximas Prioridades</h2>
+          <Card>
+            <CardContent>
+              <ol className="list-decimal space-y-1.5 pl-4 text-sm text-foreground">
+                {relatorio.prioridades.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ol>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      {relatorio.mensagemFinal && (
+        <div className="rounded-2xl bg-brand-50 px-5 py-4 text-sm italic leading-relaxed text-brand-800">
+          {relatorio.mensagemFinal}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Metrica({ label, valor, sub }: { label: string; valor: string; sub?: string }) {
   return (
     <div className="rounded-xl bg-black/[0.02] px-3 py-2.5 text-center">
       <p className="text-xs text-muted">{label}</p>
       <p className="text-base font-semibold text-foreground">{valor}</p>
       {sub && <p className="text-xs text-muted">{sub}</p>}
+    </div>
+  );
+}
+
+function BlocoTexto({
+  titulo,
+  texto,
+  corBorda,
+  bg,
+}: {
+  titulo: string;
+  texto: string;
+  corBorda: string;
+  bg: string;
+}) {
+  return (
+    <div className={`rounded-r-xl border-l-4 ${corBorda} ${bg} px-4 py-3`}>
+      <p className="mb-1 text-sm font-semibold text-foreground">{titulo}</p>
+      <p className="text-sm leading-relaxed text-foreground">{texto}</p>
     </div>
   );
 }

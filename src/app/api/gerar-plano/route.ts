@@ -132,6 +132,7 @@ export async function POST(request: Request) {
     horasSono: dados.horas_sono,
     ingestaoAguaCopos: dados.ingestao_agua_copos,
     dietaAnterior: dados.dieta_anterior,
+    historicoDietetico: dados.historico_dietetico,
     doencasFamiliares: dados.doencas_familiares,
     rotinaTrabalho: dados.rotina_trabalho,
     mastigacao: dados.mastigacao,

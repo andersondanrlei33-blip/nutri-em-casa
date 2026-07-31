@@ -14,7 +14,7 @@
  * (geração oficial do plano, salva no banco).
  */
 
-import type { CondicaoSaude, ConsumoAlcool, Genero, NivelAtividade, ObjetivoNutricional, StatusTabagismo } from "../../types/domain.ts";
+import type { CondicaoSaude, ConsumoAlcool, Genero, NivelAtividade, ObjetivoNutricional, StatusTabagismo, PontoAtencao, RelatorioConsulta } from "../../types/domain.ts";
 import { normalizar } from "./receitaMatching.ts";
 
 export interface DadosAntropometricos {
@@ -882,7 +882,637 @@ export interface ResultadoAvaliacao {
   /** Aviso proeminente quando a meta de peso informada foi bloqueada por
    *  segurança — null quando não há bloqueio. Ver avaliarSegurancaMetaPeso. */
   avisoMetaPeso: string | null;
+  /** Relatório estruturado em blocos (resumo geral, pontos fortes, pontos
+   *  de atenção priorizados, condições de saúde, hábitos de vida, alimentação,
+   *  próximas prioridades e mensagem final) — usado pela tela de resultado da
+   *  consulta e pelo Histórico. Montado inteiramente em cima dos mesmos
+   *  cálculos e regras já existentes acima; não introduz nenhuma fórmula,
+   *  trava de segurança ou decisão clínica nova — só reorganiza e reescreve
+   *  como isso é apresentado ao paciente. */
+  relatorio: RelatorioConsulta;
 }
+
+/**
+ * ---------------------------------------------------------------------
+ * Relatório da consulta em cartões (camada de apresentação)
+ * ---------------------------------------------------------------------
+ * Tudo abaixo é NOVO, mas não recalcula nem revalida nada — só reorganiza
+ * o que as funções avaliarX/calcularX acima já decidem, em blocos separados
+ * (condição de saúde, hábito de vida, etc.) e com texto mais caloroso, além
+ * de adicionar o reconhecimento de hábitos positivos (que antes não existia:
+ * as funções avaliar* só geram aviso quando algo precisa de atenção, nunca
+ * elogio). Nenhuma fórmula, trava de segurança ou regra clínica é tocada
+ * aqui — as mesmas condições/limiares já usados nas funções avaliar* acima
+ * são reaproveitados (às vezes reconferidos, já que a saída delas hoje é só
+ * texto solto, sem uma "chave" que dê pra reaproveitar estruturalmente).
+ */
+
+// PontoAtencao e RelatorioConsulta agora vêm de "../../types/domain.ts" (import
+// no topo do arquivo) — moveram pra lá pra avaliacoes_nutricionais.relatorio
+// (coluna jsonb) e o restante do app conseguirem tipar esse dado sem
+// depender de um import deste arquivo de cálculo.
+
+function elogiarSono(qualidadeSono: number | null, horasSono: string | null | undefined, insonia: boolean): string | null {
+  const duracaoBoa = horasSono === "6 a 8 horas" || horasSono === "> 8 horas";
+  const qualidadeBoa = qualidadeSono != null && qualidadeSono >= 4;
+  if (!duracaoBoa || !qualidadeBoa || insonia) return null;
+  return "Seu sono é um dos seus maiores aliados agora: dormir bem favorece a recuperação do organismo, melhora o controle do apetite e contribui tanto para o emagrecimento quanto para o ganho de massa muscular.";
+}
+
+function elogiarHidratacao(ingestaoAguaCopos: string | null | undefined, metaAguaMl: number): string | null {
+  const copos = ingestaoAguaCopos != null ? parseInt(ingestaoAguaCopos, 10) : NaN;
+  if (Number.isNaN(copos)) return null;
+  if (copos * 250 < metaAguaMl) return null;
+  return "Sua hidratação está muito boa — beber água na quantidade certa ajuda até no controle do apetite e no desempenho físico, então vale muito continuar assim.";
+}
+
+function elogiarAtividadeFisica(nivelAtividade: NivelAtividade): string | null {
+  if (nivelAtividade === "sedentario" || nivelAtividade === "leve") return null;
+  return "Seu nível de atividade física já é um excelente ponto de partida — agora o foco é potencializar esse esforço através da alimentação certa.";
+}
+
+function elogiarAlcool(consumo: ConsumoAlcool): string | null {
+  if (consumo !== "nunca") return null;
+  return "O fato de você não consumir bebidas alcoólicas também é uma vantagem importante: além de evitar calorias extras, isso favorece a recuperação do organismo e melhora a qualidade do sono.";
+}
+
+function elogiarTabagismo(status: StatusTabagismo): string | null {
+  if (status === "nunca") {
+    return "Não fumar é extremamente positivo para sua saúde cardiovascular e metabólica — um dos hábitos que mais protege seu coração a longo prazo.";
+  }
+  if (status === "ex_fumante") {
+    return "Ter parado de fumar já é uma conquista enorme para sua saúde cardiovascular — seu corpo agradece esse esforço todos os dias.";
+  }
+  return null;
+}
+
+function elogiarEstresse(nivelEstresse: number | null): string | null {
+  if (nivelEstresse == null || nivelEstresse > 2) return null;
+  return "Seu nível de estresse está bem controlado, e isso é uma vantagem real: estresse crônico costuma dificultar tanto o emagrecimento quanto o ganho de massa, então esse equilíbrio já está jogando a seu favor.";
+}
+
+function elogiarMastigacao(mastigacao: string | null | undefined): string | null {
+  if (mastigacao !== "Normal, aprecio a comida com atenção plena.") return null;
+  return "Você já mastiga com calma e atenção — isso ajuda bastante o cérebro a reconhecer o sinal de saciedade na hora certa, um detalhe pequeno que faz diferença.";
+}
+
+function elogiarDisposicao(
+  manha: string | null | undefined,
+  tarde: string | null | undefined,
+  noite: string | null | undefined
+): string | null {
+  if (manha !== "Boa" || tarde !== "Boa" || noite !== "Boa") return null;
+  return "Sua disposição física está boa ao longo de todo o dia — um bom sinal de que seu corpo está respondendo bem à sua rotina atual.";
+}
+
+function elogiarRotinaAlimentar(frequenciaRestaurante: string | null | undefined): string | null {
+  if (frequenciaRestaurante !== "Não tenho esse costume") return null;
+  return "Você raramente depende de restaurante ou delivery, o que facilita bastante manter o controle da sua alimentação no dia a dia.";
+}
+
+/** Prioridade numérica por tipo de ponto de atenção (menor = mais
+ *  importante) — segue a ordem clínica combinada: condições/situações de
+ *  risco alto primeiro, depois hábitos de vida, do que mais impacta a saúde
+ *  para o que menos impacta. */
+const TEXTOS_CONDICAO: Partial<Record<CondicaoSaude, { titulo: string; texto: string; prioridade: number }>> = {
+  diabetes_tipo1: {
+    titulo: "Diabetes",
+    prioridade: 2,
+    texto:
+      "Um dos pontos que pede atenção especial é o controle da diabetes. Vamos cuidar da distribuição dos " +
+      "carboidratos ao longo do dia para ajudar a manter sua glicemia mais estável — o acompanhamento com seu " +
+      "médico continua sendo essencial junto com a alimentação.",
+  },
+  diabetes_tipo2: {
+    titulo: "Diabetes",
+    prioridade: 2,
+    texto:
+      "Um dos pontos que pede atenção especial é o controle da diabetes. Vamos cuidar da distribuição dos " +
+      "carboidratos ao longo do dia para ajudar a manter sua glicemia mais estável — o acompanhamento com seu " +
+      "médico continua sendo essencial junto com a alimentação.",
+  },
+  hipertensao: {
+    titulo: "Pressão arterial",
+    prioridade: 3,
+    texto:
+      "Um dos pontos que merece atenção é sua pressão arterial. Como você tem hipertensão, pequenos ajustes — " +
+      "como moderar o sal e os industrializados — podem contribuir bastante para um melhor controle ao longo do tempo.",
+  },
+  doenca_renal: {
+    titulo: "Saúde renal",
+    prioridade: 4,
+    texto:
+      "Sua condição renal pede um cuidado extra com a quantidade de proteína e sódio na alimentação. Vamos " +
+      "trabalhar com valores mais conservadores, e o ideal é sempre alinhar isso de perto com seu nefrologista.",
+  },
+  hipotireoidismo: {
+    titulo: "Tireoide",
+    prioridade: 6,
+    texto:
+      "Alterações de tireoide pedem atenção especial porque afetam seu metabolismo de um jeito que a alimentação " +
+      "sozinha não resolve completamente. Vamos priorizar iodo e fibra na sua rotina, e o acompanhamento médico " +
+      "continua importante.",
+  },
+  hipertireoidismo: {
+    titulo: "Tireoide",
+    prioridade: 6,
+    texto:
+      "Alterações de tireoide pedem atenção especial porque afetam seu metabolismo de um jeito que a alimentação " +
+      "sozinha não resolve completamente. Nesse caso, vamos garantir calorias e proteína suficientes para evitar " +
+      "perda de massa muscular, e o acompanhamento médico continua importante.",
+  },
+  colesterol_alto: {
+    titulo: "Colesterol",
+    prioridade: 6,
+    texto:
+      "Seu colesterol é outro ponto que vamos cuidar juntos — priorizando gorduras boas (azeite, castanhas, " +
+      "peixes) e moderando frituras e gordura saturada no dia a dia.",
+  },
+};
+
+function montarBlocosCondicoesSaude(params: {
+  condicoesSaude: CondicaoSaude[];
+  classificacaoImc: string;
+  gestante: boolean;
+  lactante: boolean;
+  historicoTranstornoAlimentar: boolean;
+  condicaoClinicaComplexa: string | null;
+  perdaPesoNaoIntencional: string | null | undefined;
+  ganhoPesoNaoIntencional: string | null | undefined;
+}): PontoAtencao[] {
+  const blocos: PontoAtencao[] = [];
+
+  if (params.condicaoClinicaComplexa) {
+    blocos.push({
+      chave: "condicao_clinica_complexa",
+      titulo: "Cuidado especial recomendado",
+      prioridade: 1,
+      categoria: "condicao_saude",
+      texto:
+        `Você mencionou "${params.condicaoClinicaComplexa}" — esse é um cuidado que pede acompanhamento ` +
+        "nutricional presencial, com cálculos individualizados que vão além do que conseguimos fazer com segurança " +
+        "por aqui. Por enquanto, deixamos sua meta em manutenção; procure um nutricionista ou seu médico para dar " +
+        "os próximos passos com segurança.",
+    });
+  }
+  if (params.gestante) {
+    blocos.push({
+      chave: "gestante",
+      titulo: "Gestação",
+      prioridade: 1,
+      categoria: "condicao_saude",
+      texto:
+        "Como você está grávida, ajustamos sua meta para manutenção calórica, sem déficit nem superávit — o ideal " +
+        "nessa fase é ter acompanhamento próximo de um nutricionista ou obstetra para orientações individualizadas.",
+    });
+  }
+  if (params.lactante) {
+    blocos.push({
+      chave: "lactante",
+      titulo: "Amamentação",
+      prioridade: 1,
+      categoria: "condicao_saude",
+      texto:
+        "Como você está amamentando, ajustamos sua meta para manutenção calórica — essa fase pede acompanhamento " +
+        "próximo de um profissional para garantir que tanto você quanto o bebê tenham o suporte nutricional certo.",
+    });
+  }
+  if (params.historicoTranstornoAlimentar) {
+    blocos.push({
+      chave: "transtorno_alimentar",
+      titulo: "Histórico de transtorno alimentar",
+      prioridade: 1,
+      categoria: "condicao_saude",
+      texto:
+        "Como você compartilhou um histórico de transtorno alimentar, preferimos não aplicar nenhum déficit ou " +
+        "superávit automático — sua meta ficou em manutenção. Esse é um cuidado que merece acompanhamento próximo " +
+        "de um profissional especializado, e estamos aqui para apoiar o que vier depois disso.",
+    });
+  }
+
+  const titulosJaAdicionados = new Set<string>();
+  for (const condicao of params.condicoesSaude) {
+    const info = TEXTOS_CONDICAO[condicao];
+    if (!info || titulosJaAdicionados.has(info.titulo)) continue;
+    titulosJaAdicionados.add(info.titulo);
+    blocos.push({ chave: condicao, titulo: info.titulo, prioridade: info.prioridade, categoria: "condicao_saude", texto: info.texto });
+  }
+
+  if (params.classificacaoImc === "Obesidade grau II" || params.classificacaoImc === "Obesidade grau III") {
+    blocos.push({
+      chave: "peso_corporal",
+      titulo: "Peso corporal",
+      prioridade: 5,
+      categoria: "condicao_saude",
+      texto:
+        "Seu peso atual está numa faixa que pede atenção redobrada — mas isso não muda o caminho: pequenas " +
+        "mudanças consistentes na alimentação, mantidas ao longo do tempo, costumam trazer resultados reais e " +
+        "duradouros nesse cenário.",
+    });
+  } else if (params.classificacaoImc === "Abaixo do peso") {
+    blocos.push({
+      chave: "peso_corporal",
+      titulo: "Peso corporal",
+      prioridade: 5,
+      categoria: "condicao_saude",
+      texto:
+        "Seu peso atual está abaixo da faixa considerada saudável para sua altura. Vamos focar em ganhar peso de " +
+        "forma gradual e segura, e recomendamos fortemente somar isso a um acompanhamento presencial.",
+    });
+  }
+
+  if (params.perdaPesoNaoIntencional && params.perdaPesoNaoIntencional.trim()) {
+    blocos.push({
+      chave: "mudanca_peso",
+      titulo: "Perda de peso recente",
+      prioridade: 2,
+      categoria: "condicao_saude",
+      texto:
+        "Você mencionou ter perdido peso recentemente sem intenção de fazer isso — vale a pena investigar essa " +
+        "mudança com um médico ou nutricionista presencialmente, mesmo que o restante da consulta não tenha " +
+        "apontado nada preocupante.",
+    });
+  }
+  if (params.ganhoPesoNaoIntencional && params.ganhoPesoNaoIntencional.trim()) {
+    blocos.push({
+      chave: "mudanca_peso",
+      titulo: "Ganho de peso recente",
+      prioridade: 2,
+      categoria: "condicao_saude",
+      texto:
+        "Você mencionou ter ganhado peso recentemente sem intenção de fazer isso — vale comentar com um médico ou " +
+        "nutricionista presencialmente, principalmente se não conseguir associar isso a uma mudança clara de rotina.",
+    });
+  }
+
+  return blocos;
+}
+
+function montarBlocosHabitosVida(params: {
+  nivelAtividade: NivelAtividade;
+  objetivo: ObjetivoNutricional;
+  ingestaoAguaCopos: string | null | undefined;
+  aguaMl: number;
+  horasSono: string | null | undefined;
+  qualidadeSono: number | null;
+  insonia: boolean;
+  nivelEstresse: number | null;
+  consumoAlcool: ConsumoAlcool;
+  tabagismo: StatusTabagismo;
+  frequenciaRestaurante: string | null | undefined;
+  mastigacao: string | null | undefined;
+  rotinaTrabalho: string | null | undefined;
+}): PontoAtencao[] {
+  const blocos: PontoAtencao[] = [];
+
+  if (params.objetivo === "emagrecimento" && (params.nivelAtividade === "sedentario" || params.nivelAtividade === "leve")) {
+    blocos.push({
+      chave: "sedentarismo",
+      titulo: "Atividade física",
+      prioridade: 7,
+      categoria: "habito_vida",
+      texto:
+        "Seu nível de atividade física ainda está baixo para o seu objetivo. A recomendação é de 150 a 300 " +
+        "minutos por semana de atividade moderada (ou 75-150 minutos intensa), mais fortalecimento muscular 2x ou " +
+        "mais por semana — aumentar isso aos poucos tende a acelerar bastante o resultado, junto com a alimentação.",
+    });
+  }
+
+  const copos = params.ingestaoAguaCopos != null ? parseInt(params.ingestaoAguaCopos, 10) : NaN;
+  if (!Number.isNaN(copos)) {
+    const aguaRelatadaMl = copos * 250;
+    if (aguaRelatadaMl < params.aguaMl * 0.8) {
+      const litrosFaltando = Math.max(0.25, (params.aguaMl - aguaRelatadaMl) / 1000);
+      blocos.push({
+        chave: "agua",
+        titulo: "Hidratação",
+        prioridade: 8,
+        categoria: "habito_vida",
+        texto:
+          `Sua recomendação diária é de aproximadamente ${(params.aguaMl / 1000).toFixed(1)} litros. Pela sua ` +
+          `resposta, ainda faltam cerca de ${litrosFaltando.toFixed(1)} litro por dia para chegar lá — ir ` +
+          "aumentando aos poucos, com um copo a mais em horários fixos, costuma ajudar bastante a criar o hábito.",
+      });
+    }
+  }
+
+  const duracaoRuim = params.horasSono === "< 4 horas" || params.horasSono === "4 a 6 horas";
+  const qualidadeRuim = params.qualidadeSono != null && params.qualidadeSono <= 2;
+  if (duracaoRuim || qualidadeRuim || params.insonia) {
+    blocos.push({
+      chave: "sono",
+      titulo: "Sono",
+      prioridade: 9,
+      categoria: "habito_vida",
+      texto: params.insonia
+        ? "Você relatou insônia, e isso interfere bastante no apetite e na composição corporal — vale a pena " +
+          "investigar isso com um profissional se persistir, além de tentar manter horários de sono mais regulares."
+        : "Seu sono ainda não está no ponto ideal (a referência para adultos é de 7 a 9 horas por noite, com boa " +
+          "qualidade). Dormir melhor pode ajudar tanto quanto um ajuste na dieta, porque sono ruim aumenta a fome " +
+          "ao longo do dia.",
+    });
+  }
+
+  if (params.nivelEstresse != null && params.nivelEstresse >= 4) {
+    blocos.push({
+      chave: "estresse",
+      titulo: "Estresse",
+      prioridade: 10,
+      categoria: "habito_vida",
+      texto:
+        "Seu nível de estresse está alto, e isso conta mais do que parece: o estresse crônico eleva o cortisol e " +
+        "pode dificultar tanto o emagrecimento quanto o ganho de massa. Vale cuidar disso em paralelo com a " +
+        "alimentação — mesmo pequenas pausas ao longo do dia já ajudam.",
+    });
+  }
+
+  if (params.consumoAlcool === "moderado" || params.consumoAlcool === "frequente") {
+    const dicaReducao =
+      params.objetivo === "emagrecimento"
+        ? " Reduzir a frequência é o que mais ajuda nesse caso — o álcool pausa a queima de gordura por várias " +
+          "horas depois de beber. Se for continuar bebendo, evitar misturadores açucarados e petiscos salgados já " +
+          "reduz bastante o impacto."
+        : "";
+    blocos.push({
+      chave: "alcool",
+      titulo: "Álcool",
+      prioridade: 11,
+      categoria: "habito_vida",
+      texto:
+        "O álcool tem calorias que não entram no cálculo do seu plano, então quanto mais frequente o consumo, " +
+        `mais isso pode pesar no seu resultado.${dicaReducao}`,
+    });
+  }
+
+  if (params.tabagismo === "fumante") {
+    blocos.push({
+      chave: "tabagismo",
+      titulo: "Tabagismo",
+      prioridade: 11,
+      categoria: "habito_vida",
+      texto:
+        "Fumar aumenta a necessidade de vitamina C pelo estresse oxidativo do cigarro — vale incluir mais frutas " +
+        "cítricas, acerola, goiaba e vegetais crus na rotina. E se um dia fizer sentido buscar apoio para parar, " +
+        "isso teria um impacto na sua saúde maior do que qualquer ajuste na dieta.",
+    });
+  }
+
+  if (params.frequenciaRestaurante === "3 a 4 vezes por semana" || params.frequenciaRestaurante === "Sempre") {
+    blocos.push({
+      chave: "delivery",
+      titulo: "Restaurante e delivery",
+      prioridade: 12,
+      categoria: "habito_vida",
+      texto:
+        "Você come fora (restaurante, bar ou delivery) com bastante frequência. Não precisa cortar completamente " +
+        "— só escolher com um pouco mais de atenção nesses dias (grelhados, saladas, evitar refrigerante) já faz " +
+        "diferença.",
+    });
+  }
+
+  if (params.mastigacao === "Rápida demais, sempre termino primeiro.") {
+    blocos.push({
+      chave: "mastigacao",
+      titulo: "Mastigação",
+      prioridade: 13,
+      categoria: "habito_vida",
+      texto:
+        "Você relatou que come rápido. Tentar pausar entre garfadas e mastigar mais devagar ajuda o cérebro a " +
+        "reconhecer a saciedade a tempo — o corpo leva de 15 a 20 minutos para sentir esse sinal.",
+    });
+  }
+
+  const rotinaNormalizada = params.rotinaTrabalho ? normalizar(params.rotinaTrabalho) : "";
+  if (["noturno", "turno", "madrugada", "plantao", "escala", "revezamento"].some((t) => rotinaNormalizada.includes(t))) {
+    blocos.push({
+      chave: "rotina_trabalho",
+      titulo: "Rotina de trabalho",
+      prioridade: 12,
+      categoria: "habito_vida",
+      texto:
+        "Sua rotina parece incluir turno noturno ou horários irregulares, o que está associado a mais risco " +
+        "metabólico. Manter horários de refeição o mais fixos possível dentro da sua escala ajuda bastante, mesmo " +
+        "que não sejam horários 'convencionais'.",
+    });
+  }
+
+  return blocos;
+}
+
+function montarAlimentacao(params: {
+  restricoesAlimentares: string[];
+  historicoDietetico: string | null | undefined;
+  dietaAnterior: string | null | undefined;
+}): string {
+  const normalizadas = params.restricoesAlimentares.map(normalizar);
+  const eVegano = normalizadas.some((r) => r.includes("vegan"));
+  const eVegetariano = !eVegano && normalizadas.some((r) => r.includes("vegetarian"));
+
+  const partes: string[] = [];
+  partes.push(
+    params.historicoDietetico && params.historicoDietetico.trim()
+      ? "Pelo que você descreveu da sua rotina alimentar, já dá para montar um plano que se encaixa bem no seu " +
+        "dia a dia — vamos manter o que já funciona para você e ajustar só o que for necessário para bater suas metas."
+      : "Vamos montar seu plano alimentar já pensando em algo prático para a sua rotina."
+  );
+
+  if (eVegano) {
+    partes.push(
+      "Como sua alimentação é vegana, vamos ficar de olho principalmente em vitamina B12 (que não existe em " +
+        "fontes vegetais e geralmente pede suplementação), além de ferro, cálcio, zinco e ômega-3 — vale conversar " +
+        "com um nutricionista sobre suplementação."
+    );
+  } else if (eVegetariano) {
+    partes.push(
+      "Como sua alimentação é vegetariana, vamos dar atenção especial a ferro, cálcio e vitamina B12, " +
+        "principalmente se ovos e laticínios não estiverem sempre presentes — combinar fontes vegetais de ferro " +
+        "com vitamina C ajuda bastante na absorção."
+    );
+  }
+
+  if (params.dietaAnterior && normalizar(params.dietaAnterior) !== "não") {
+    partes.push(
+      "Como você já tentou outras dietas antes, vamos priorizar um ritmo mais gradual desta vez — mudanças " +
+        "pequenas e consistentes tendem a durar muito mais do que restrições radicais."
+    );
+  }
+
+  return partes.join(" ");
+}
+
+/** Mapeia a chave de cada ponto de atenção pra uma frase de ação curta,
+ *  usada na seção "Próximas Prioridades" (só as 5 primeiras, na ordem de
+ *  prioridade já aplicada em pontosAtencao). */
+const FRASE_PRIORIDADE: Record<string, string> = {
+  condicao_clinica_complexa: "Buscar acompanhamento presencial para sua condição de saúde",
+  gestante: "Manter acompanhamento próximo durante a gestação",
+  lactante: "Manter acompanhamento próximo durante a amamentação",
+  transtorno_alimentar: "Buscar acompanhamento especializado",
+  diabetes_tipo1: "Cuidar da distribuição de carboidratos ao longo do dia",
+  diabetes_tipo2: "Cuidar da distribuição de carboidratos ao longo do dia",
+  hipertensao: "Reduzir o sódio no dia a dia",
+  doenca_renal: "Manter a proteína dentro do limite conversado com seu médico",
+  hipotireoidismo: "Acompanhar sua tireoide de perto",
+  hipertireoidismo: "Acompanhar sua tireoide de perto",
+  colesterol_alto: "Priorizar gorduras boas e reduzir frituras",
+  peso_corporal: "Focar em mudanças graduais no peso corporal",
+  mudanca_peso: "Investigar a mudança de peso recente com um profissional",
+  sedentarismo: "Aumentar gradualmente sua atividade física",
+  agua: "Aumentar sua ingestão de água",
+  sono: "Melhorar a qualidade e a duração do sono",
+  estresse: "Cuidar do seu nível de estresse",
+  alcool: "Reduzir a frequência do consumo de álcool",
+  tabagismo: "Buscar apoio para reduzir o cigarro",
+  delivery: "Reduzir a frequência de delivery e restaurante",
+  mastigacao: "Mastigar com mais calma nas refeições",
+  rotina_trabalho: "Fixar horários de refeição dentro da sua escala de trabalho",
+};
+
+function montarPrioridades(pontosAtencao: PontoAtencao[]): string[] {
+  const vistas = new Set<string>();
+  const prioridades: string[] = [];
+  for (const ponto of pontosAtencao) {
+    const frase = FRASE_PRIORIDADE[ponto.chave];
+    if (!frase || vistas.has(frase)) continue;
+    vistas.add(frase);
+    prioridades.push(frase);
+    if (prioridades.length >= 5) break;
+  }
+  return prioridades;
+}
+
+function montarMensagemFinal(pontosFortes: string[], pontosAtencao: PontoAtencao[]): string {
+  if (pontosAtencao.length === 0) {
+    return (
+      "Você já reúne ótimos hábitos para alcançar seu objetivo — nosso trabalho agora é manter essa consistência " +
+      "e ajustar os detalhes finos junto com o plano alimentar. Continue assim!"
+    );
+  }
+  if (pontosFortes.length === 0) {
+    return (
+      "Esse é só o começo: pequenas mudanças consistentes costumam gerar resultados muito maiores do que " +
+      "mudanças radicais. Vamos trabalhar juntos, um passo de cada vez, nos pontos que mais importam agora."
+    );
+  }
+  return (
+    "Você já possui hábitos importantes que servem de base para alcançar seu objetivo. Agora vamos trabalhar " +
+    "juntos para melhorar gradualmente os pontos que ainda precisam de atenção — lembre-se de que resultados " +
+    "duradouros normalmente vêm de pequenas mudanças consistentes, não de mudanças radicais."
+  );
+}
+
+function montarResumoGeral(
+  imc: number,
+  classificacaoImc: string,
+  objetivo: ObjetivoNutricional,
+  metaCalorica: number,
+  avisoSeguranca: string | null
+): string {
+  const base =
+    `Após analisar suas respostas, seu IMC está na faixa de ${classificacaoImc.toLowerCase()} e o foco a partir ` +
+    `de agora vai ser ${OBJETIVO_TEXTO[objetivo]}.`;
+  if (avisoSeguranca) return `${base} ${avisoSeguranca}`;
+  return `${base} Sua meta calórica foi definida em ${metaCalorica} kcal por dia, buscando um resultado gradual e seguro.`;
+}
+
+function montarRelatorioConsulta(params: {
+  imc: number;
+  classificacaoImc: string;
+  tmb: number;
+  tdee: number;
+  metaCalorica: number;
+  objetivo: ObjetivoNutricional;
+  avisoSeguranca: string | null;
+  avisoMetaPeso: string | null;
+  condicoesSaude: CondicaoSaude[];
+  gestante: boolean;
+  lactante: boolean;
+  historicoTranstornoAlimentar: boolean;
+  condicaoClinicaComplexa: string | null;
+  perdaPesoNaoIntencional: string | null | undefined;
+  ganhoPesoNaoIntencional: string | null | undefined;
+  nivelAtividade: NivelAtividade;
+  ingestaoAguaCopos: string | null | undefined;
+  aguaMl: number;
+  horasSono: string | null | undefined;
+  qualidadeSono: number | null;
+  insonia: boolean;
+  nivelEstresse: number | null;
+  consumoAlcool: ConsumoAlcool;
+  tabagismo: StatusTabagismo;
+  frequenciaRestaurante: string | null | undefined;
+  mastigacao: string | null | undefined;
+  rotinaTrabalho: string | null | undefined;
+  disposicaoManha: string | null | undefined;
+  disposicaoTarde: string | null | undefined;
+  disposicaoNoite: string | null | undefined;
+  restricoesAlimentares: string[];
+  historicoDietetico: string | null | undefined;
+  dietaAnterior: string | null | undefined;
+}): RelatorioConsulta {
+  const pontosFortes = [
+    elogiarSono(params.qualidadeSono, params.horasSono, params.insonia),
+    elogiarHidratacao(params.ingestaoAguaCopos, params.aguaMl),
+    elogiarAtividadeFisica(params.nivelAtividade),
+    elogiarAlcool(params.consumoAlcool),
+    elogiarTabagismo(params.tabagismo),
+    elogiarEstresse(params.nivelEstresse),
+    elogiarMastigacao(params.mastigacao),
+    elogiarDisposicao(params.disposicaoManha, params.disposicaoTarde, params.disposicaoNoite),
+    elogiarRotinaAlimentar(params.frequenciaRestaurante),
+  ].filter((texto): texto is string => Boolean(texto));
+
+  const condicoesSaude = montarBlocosCondicoesSaude({
+    condicoesSaude: params.condicoesSaude,
+    classificacaoImc: params.classificacaoImc,
+    gestante: params.gestante,
+    lactante: params.lactante,
+    historicoTranstornoAlimentar: params.historicoTranstornoAlimentar,
+    condicaoClinicaComplexa: params.condicaoClinicaComplexa,
+    perdaPesoNaoIntencional: params.perdaPesoNaoIntencional,
+    ganhoPesoNaoIntencional: params.ganhoPesoNaoIntencional,
+  });
+
+  const habitosVida = montarBlocosHabitosVida({
+    nivelAtividade: params.nivelAtividade,
+    objetivo: params.objetivo,
+    ingestaoAguaCopos: params.ingestaoAguaCopos,
+    aguaMl: params.aguaMl,
+    horasSono: params.horasSono,
+    qualidadeSono: params.qualidadeSono,
+    insonia: params.insonia,
+    nivelEstresse: params.nivelEstresse,
+    consumoAlcool: params.consumoAlcool,
+    tabagismo: params.tabagismo,
+    frequenciaRestaurante: params.frequenciaRestaurante,
+    mastigacao: params.mastigacao,
+    rotinaTrabalho: params.rotinaTrabalho,
+  });
+
+  const pontosAtencao = [...condicoesSaude, ...habitosVida].sort((a, b) => a.prioridade - b.prioridade);
+
+  return {
+    imc: params.imc,
+    classificacaoImc: params.classificacaoImc,
+    tmb: params.tmb,
+    tdee: params.tdee,
+    metaCalorica: params.metaCalorica,
+    resumoGeral: montarResumoGeral(params.imc, params.classificacaoImc, params.objetivo, params.metaCalorica, params.avisoSeguranca),
+    pontosFortes,
+    pontosAtencao,
+    condicoesSaude,
+    habitosVida,
+    alimentacao: montarAlimentacao({
+      restricoesAlimentares: params.restricoesAlimentares,
+      historicoDietetico: params.historicoDietetico,
+      dietaAnterior: params.dietaAnterior,
+    }),
+    prioridades: montarPrioridades(pontosAtencao),
+    mensagemFinal: montarMensagemFinal(pontosFortes, pontosAtencao),
+    avisoMetaPeso: params.avisoMetaPeso,
+  };
+}
+
 
 const OBJETIVO_TEXTO: Record<ObjetivoNutricional, string> = {
   emagrecimento: "emagrecer",
@@ -1047,6 +1677,12 @@ export function gerarResultadoAvaliacao(
     rotinaTrabalho?: string | null;
     mastigacao?: string | null;
     frequenciaRestaurante?: string | null;
+    // Usados só pelo relatório em cartões (seção "o que você já faz bem") —
+    // não entram em nenhum cálculo, são só registro/contexto, igual aos
+    // outros campos da anamnese de 40 perguntas.
+    disposicaoManha?: string | null;
+    disposicaoTarde?: string | null;
+    disposicaoNoite?: string | null;
   } & CondicaoEspecial
 ): ResultadoAvaliacao {
   const imc = calcularIMC(dados);
@@ -1059,16 +1695,18 @@ export function gerarResultadoAvaliacao(
   );
   const tmb = calcularTMB(dados);
   const tdee = calcularTDEE(tmb, dados.nivelAtividade);
+  // Extraído pra variável própria (antes era só uma expressão inline) porque o
+  // relatório em cartões também precisa desse valor mais abaixo — mesma
+  // chamada de identificarCondicaoClinicaComplexa, sem mudar o que ela faz.
+  const condicaoClinicaComplexa = identificarCondicaoClinicaComplexa(
+    [dados.condicoesSaudeOutras, dados.historicoCirurgias].filter(Boolean).join(" ")
+  );
   const { valor: metaCalorica, avisoSeguranca } = calcularMetaCalorica(tdee, dados.objetivo, dados.genero, {
     gestante: dados.gestante,
     lactante: dados.lactante,
     historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
     imcAbaixoDoPesoComObjetivoEmagrecimento: imc < 18.5 && dados.objetivo === "emagrecimento",
-    // Escaneia tanto "outra condição" quanto o relato de cirurgias — os dois
-    // são texto livre onde uma cirurgia bariátrica, por exemplo, pode aparecer.
-    condicaoClinicaComplexa: identificarCondicaoClinicaComplexa(
-      [dados.condicoesSaudeOutras, dados.historicoCirurgias].filter(Boolean).join(" ")
-    ),
+    condicaoClinicaComplexa,
   });
 
   const { avisos: avisosCondicoes, limiteProteinaPorKg } = avaliarCondicoesSaude(dados.condicoesSaude ?? []);
@@ -1162,6 +1800,42 @@ export function gerarResultadoAvaliacao(
     observacoesPaciente: dados.observacoesPaciente,
   });
 
+  const relatorio = montarRelatorioConsulta({
+    imc,
+    classificacaoImc,
+    tmb,
+    tdee,
+    metaCalorica,
+    objetivo: dados.objetivo,
+    avisoSeguranca,
+    avisoMetaPeso,
+    condicoesSaude: dados.condicoesSaude ?? [],
+    gestante: dados.gestante ?? false,
+    lactante: dados.lactante ?? false,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar ?? false,
+    condicaoClinicaComplexa,
+    perdaPesoNaoIntencional: dados.perdaPesoNaoIntencional,
+    ganhoPesoNaoIntencional: dados.ganhoPesoNaoIntencional,
+    nivelAtividade: dados.nivelAtividade,
+    ingestaoAguaCopos: dados.ingestaoAguaCopos,
+    aguaMl,
+    horasSono: dados.horasSono,
+    qualidadeSono: dados.qualidadeSono ?? null,
+    insonia: dados.insonia ?? false,
+    nivelEstresse: dados.nivelEstresse ?? null,
+    consumoAlcool: dados.consumoAlcool ?? "nunca",
+    tabagismo: dados.tabagismo ?? "nunca",
+    frequenciaRestaurante: dados.frequenciaRestaurante,
+    mastigacao: dados.mastigacao,
+    rotinaTrabalho: dados.rotinaTrabalho,
+    disposicaoManha: dados.disposicaoManha,
+    disposicaoTarde: dados.disposicaoTarde,
+    disposicaoNoite: dados.disposicaoNoite,
+    restricoesAlimentares: dados.restricoesAlimentares ?? [],
+    historicoDietetico: dados.historicoDietetico,
+    dietaAnterior: dados.dietaAnterior,
+  });
+
   return {
     imc,
     classificacaoImc,
@@ -1174,6 +1848,7 @@ export function gerarResultadoAvaliacao(
     resumo,
     pesoMetaKg: pesoMetaSeguro,
     avisoMetaPeso,
+    relatorio,
   };
 }
 

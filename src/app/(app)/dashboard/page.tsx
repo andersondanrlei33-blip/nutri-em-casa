@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Scale, Target, Droplets, Activity, Stethoscope } from "lucide-react";
+import { Scale, Target, Droplets, Activity, Stethoscope, Flag } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { StatCard } from "@/components/dashboard/StatCard";
@@ -30,7 +30,16 @@ import type {
   RegistroAgua,
   RegistroConsumo,
   Receita,
+  ObjetivoNutricional,
 } from "@/types/domain";
+
+const OBJETIVO_LABEL: Record<ObjetivoNutricional, string> = {
+  emagrecimento: "Emagrecimento",
+  manutencao: "Manutenção de peso",
+  ganho_massa: "Ganho de massa",
+  saude_geral: "Saúde geral",
+  performance_esportiva: "Performance esportiva",
+};
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -209,9 +218,15 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold capitalize text-foreground">{formatarDataLonga(hoje)}</h1>
-        <p className="mt-1 text-sm text-muted">Aqui está o seu resumo de hoje.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold capitalize text-foreground">{formatarDataLonga(hoje)}</h1>
+          <p className="mt-1 text-sm text-muted">Aqui está o seu resumo de hoje.</p>
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700">
+          <Flag className="h-3.5 w-3.5" />
+          {OBJETIVO_LABEL[av.objetivo]}
+        </span>
       </div>
 
       {diasDesdeConsulta >= 15 && (

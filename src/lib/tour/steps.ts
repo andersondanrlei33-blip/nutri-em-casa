@@ -17,31 +17,31 @@ export const PASSOS_TOUR: PassoTour[] = [
     alvo: "nav-dashboard",
     titulo: "Dashboard",
     descricao:
-      "Seu resumo do dia: peso atual, IMC, quanto de água já bebeu, meta calórica e as refeições de hoje.",
+      "Seu resumo do dia: peso atual, IMC, água e meta calórica, além da distribuição de macros. Mais abaixo você acompanha sua adesão ao plano na semana, as refeições de hoje, suas conquistas e a evolução do peso.",
+  },
+  {
+    alvo: "link-perfil",
+    titulo: "Meu Perfil",
+    descricao:
+      "Aqui ficam seus dados pessoais — nome, gênero e data de nascimento. Vale completar essas informações antes da primeira consulta: são elas que definem sua idade e personalizam o plano com segurança.",
   },
   {
     alvo: "nav-consulta",
     titulo: "Consulta Nutricional",
     descricao:
-      "Onde tudo começa. Responda sobre seu peso, objetivo, restrições e rotina para gerar seu plano alimentar personalizado.",
+      "Onde tudo começa. Responda sobre seu peso, objetivo, restrições e rotina para gerar seu plano alimentar personalizado. Se for sua primeira consulta, complete seu perfil antes de iniciar.",
   },
   {
     alvo: "nav-plano",
     titulo: "Plano Alimentar",
     descricao:
-      "Seu cardápio da semana, dia a dia. Edite, troque ou duplique qualquer refeição — nada fica travado.",
+      "Seu cardápio da semana, dia a dia — com refeições de pré e pós-treino posicionadas em torno do seu horário de treino, quando você pede isso na consulta. Edite, troque ou duplique qualquer refeição — nada fica travado.",
   },
   {
     alvo: "nav-receitas",
     titulo: "Receitas",
     descricao:
-      "Biblioteca de receitas saudáveis com calorias e macros já calculados. Favorite, edite ou crie as suas.",
-  },
-  {
-    alvo: "nav-lista-compras",
-    titulo: "Lista de Compras",
-    descricao:
-      "Gerada automaticamente a partir das receitas vinculadas ao seu plano da semana — sem precisar montar na mão.",
+      "Biblioteca de receitas saudáveis com calorias e macros já calculados. Pesquise, filtre por categoria, favorite, edite ou crie as suas.",
   },
   {
     alvo: "nav-acompanhamento",
@@ -56,11 +56,6 @@ export const PASSOS_TOUR: PassoTour[] = [
       "Compare uma consulta com outra, veja peso e medidas evoluindo no gráfico e sua consistência nos últimos 30 dias — tudo que a gente revisa numa consulta de retorno.",
   },
   {
-    alvo: "nav-metas",
-    titulo: "Metas",
-    descricao: "Defina objetivos (peso, hábitos, o que quiser) e acompanhe seu progresso até chegar lá.",
-  },
-  {
     alvo: "nav-historico",
     titulo: "Histórico",
     descricao: "A linha do tempo completa da sua jornada: consultas, pesagens, exercícios registrados.",
@@ -69,6 +64,12 @@ export const PASSOS_TOUR: PassoTour[] = [
     alvo: "nav-assinatura",
     titulo: "Assinatura",
     descricao: "Veja seu plano atual e, quando quiser, libere os recursos ilimitados do Premium.",
+  },
+  {
+    alvo: "nav-configuracoes",
+    titulo: "Configurações",
+    descricao:
+      "Gerencie seus planos alimentares — veja qual está ativo e troque quando quiser —, sua segurança (como sair de todos os dispositivos) e outras opções da sua conta.",
   },
   {
     alvo: "botao-ajuda",

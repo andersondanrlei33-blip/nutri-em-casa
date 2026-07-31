@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp, ShieldAlert } from "lucide-react";
+import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp, ShieldAlert, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -15,6 +15,7 @@ import type {
   NivelAtividade,
   ObjetivoNutricional,
   StatusTabagismo,
+  RelatorioConsulta,
 } from "@/types/domain";
 /**
  * Consulta Nutricional — anamnese completa (baseada no questionário real de
@@ -253,6 +254,7 @@ export function ConsultaWizard({
     avisos: string[];
     resumo: string;
     avisoMetaPeso: string | null;
+    relatorio: RelatorioConsulta | null;
   }>(null);
   const pergunta = indice >= 0 && indice < PERGUNTAS.length ? PERGUNTAS[indice] : null;
   function set<K extends keyof RespostasConsulta>(campo: K, valor: RespostasConsulta[K]) {
@@ -457,6 +459,7 @@ export function ConsultaWizard({
         avisos: dados.avisos ?? [],
         resumo: dados.resumoConsulta ?? "",
         avisoMetaPeso: dados.avisoMetaPeso ?? null,
+        relatorio: dados.relatorio ?? null,
       });
       toast.sucesso("Sua consulta foi concluída com sucesso!");
     } catch (erro) {
@@ -501,12 +504,16 @@ export function ConsultaWizard({
               <Metrica label="Meta calórica" valor={`${preview.metaCalorica} kcal`} />
             </div>
           )}
-          {resultadoFinal.resumo && (
-            <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-left text-sm leading-relaxed text-foreground">
-              {resultadoFinal.resumo.split("\n\n").map((paragrafo, i) => (
-                <p key={i}>{paragrafo}</p>
-              ))}
-            </div>
+          {resultadoFinal.relatorio ? (
+            <RelatorioEmCartoes relatorio={resultadoFinal.relatorio} />
+          ) : (
+            resultadoFinal.resumo && (
+              <div className="mt-4 space-y-3 rounded-xl bg-black/[0.02] px-4 py-4 text-left text-sm leading-relaxed text-foreground">
+                {resultadoFinal.resumo.split("\n\n").map((paragrafo, i) => (
+                  <p key={i}>{paragrafo}</p>
+                ))}
+              </div>
+            )
           )}
           <p className="mt-5 text-sm text-muted">{resultadoFinal.observacoes}</p>
           {retorno && (
@@ -677,6 +684,121 @@ export function ConsultaWizard({
     </div>
   );
 }
+function RelatorioEmCartoes({ relatorio }: { relatorio: RelatorioConsulta }) {
+  return (
+    <div className="mt-4 space-y-4 text-left">
+      {relatorio.resumoGeral && (
+        <div className="rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
+          <p>{relatorio.resumoGeral}</p>
+        </div>
+      )}
+
+      {relatorio.pontosFortes.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-600">
+            O que você já faz muito bem
+          </h3>
+          <ul className="space-y-2">
+            {relatorio.pontosFortes.map((texto, i) => (
+              <li key={i} className="flex items-start gap-2 rounded-xl bg-brand-50 px-4 py-2.5 text-sm text-foreground">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+                <span>{texto}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {relatorio.pontosAtencao.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Pontos que merecem mais atenção
+          </h3>
+          <ul className="space-y-1.5">
+            {relatorio.pontosAtencao.map((ponto) => (
+              <li key={ponto.chave} className="flex items-center gap-2.5 rounded-lg bg-amber-50 px-3.5 py-2 text-sm text-foreground">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-400 text-[11px] font-bold text-white">
+                  {ponto.prioridade}
+                </span>
+                {ponto.titulo}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {relatorio.condicoesSaude.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Condições de Saúde</h3>
+          <div className="space-y-2">
+            {relatorio.condicoesSaude.map((c) => (
+              <BlocoTexto key={c.chave} titulo={c.titulo} texto={c.texto} corBorda="border-red-300" bg="bg-red-50/60" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {relatorio.habitosVida.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Hábitos de Vida</h3>
+          <div className="space-y-2">
+            {relatorio.habitosVida.map((h) => (
+              <BlocoTexto key={h.chave} titulo={h.titulo} texto={h.texto} corBorda="border-amber-300" bg="bg-amber-50/60" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {relatorio.alimentacao && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Alimentação</h3>
+          <div className="rounded-xl bg-black/[0.02] px-4 py-4 text-sm leading-relaxed text-foreground">
+            <p>{relatorio.alimentacao}</p>
+          </div>
+        </div>
+      )}
+
+      {relatorio.prioridades.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Próximas Prioridades</h3>
+          <div className="rounded-xl bg-black/[0.02] px-4 py-4">
+            <ol className="list-decimal space-y-1.5 pl-4 text-sm text-foreground">
+              {relatorio.prioridades.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      )}
+
+      {relatorio.mensagemFinal && (
+        <div className="rounded-xl bg-brand-50 px-4 py-4 text-sm italic leading-relaxed text-brand-800">
+          {relatorio.mensagemFinal}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BlocoTexto({
+  titulo,
+  texto,
+  corBorda,
+  bg,
+}: {
+  titulo: string;
+  texto: string;
+  corBorda: string;
+  bg: string;
+}) {
+  return (
+    <div className={`rounded-r-xl border-l-4 ${corBorda} ${bg} px-4 py-3`}>
+      <p className="mb-1 text-sm font-semibold text-foreground">{titulo}</p>
+      <p className="text-sm leading-relaxed text-foreground">{texto}</p>
+    </div>
+  );
+}
+
 function Metrica({ label, valor, sub }: { label: string; valor: string; sub?: string }) {
   return (
     <div className="rounded-xl bg-black/[0.02] px-3 py-2.5 text-center">

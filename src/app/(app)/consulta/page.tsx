@@ -1,5 +1,9 @@
+import Link from "next/link";
 import { ConsultaWizard } from "@/components/consulta/ConsultaWizard";
 import { createClient } from "@/lib/supabase/server";
+import { Card, CardContent } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { UserRound } from "lucide-react";
 import type { AvaliacaoNutricional } from "@/types/domain";
 
 export default async function ConsultaPage() {
@@ -20,6 +24,39 @@ export default async function ConsultaPage() {
     avaliacaoAnterior = data as AvaliacaoNutricional | null;
   }
 
+  // Gênero e data de nascimento vêm do cadastro/"Meu Perfil" — não são mais
+  // perguntados aqui (ver ConsultaWizard.tsx). Contas criadas antes dessa
+  // mudança podem não ter esses dados ainda, então bloqueamos a consulta e
+  // pedimos pra completar o perfil primeiro, em vez de deixar a consulta
+  // prosseguir sem um dado que entra direto na fórmula de TMB/TDEE.
+  const { data: perfil } = user
+    ? await supabase.from("perfis").select("genero, data_nascimento").eq("id", user.id).maybeSingle()
+    : { data: null };
+
+  const perfilIncompleto = !perfil?.genero || !perfil?.data_nascimento;
+
+  if (perfilIncompleto) {
+    return (
+      <div className="mx-auto max-w-xl">
+        <Card>
+          <CardContent className="py-10 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
+              <UserRound className="h-6 w-6 text-brand-600" />
+            </div>
+            <h2 className="text-lg font-semibold text-foreground">Complete seu perfil primeiro</h2>
+            <p className="mt-2 text-sm text-muted">
+              Precisamos do seu gênero e data de nascimento pra calcular sua consulta com segurança. Isso leva
+              menos de um minuto.
+            </p>
+            <Link href="/perfil">
+              <Button className="mt-6">Ir para Meu Perfil</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const retorno = Boolean(avaliacaoAnterior);
 
   return (
@@ -34,7 +71,10 @@ export default async function ConsultaPage() {
             : "Responda com atenção — essas informações são a base do seu plano alimentar personalizado."}
         </p>
       </div>
-      <ConsultaWizard avaliacaoAnterior={avaliacaoAnterior} />
+      <ConsultaWizard
+        avaliacaoAnterior={avaliacaoAnterior}
+        perfil={{ genero: perfil!.genero!, dataNascimento: perfil!.data_nascimento! }}
+      />
     </div>
   );
 }

@@ -58,7 +58,7 @@ export function MealForm({ aberto, aoFechar, aoSalvar, refeicaoExistente, receit
             ))}
           </Select>
           <p className="mt-1 text-xs text-muted">
-            Vincular uma receita preenche os ingredientes na Lista de Compras automaticamente.
+            Vincular uma receita preenche automaticamente as calorias e os macros dessa refeição.
           </p>
         </div>
         <div>

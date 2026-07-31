@@ -44,6 +44,36 @@ export type ConsumoAlcool = "nunca" | "raramente" | "moderado" | "frequente";
 /** Status de tabagismo informado na consulta — usado em
  *  lib/nutrition/calculations.ts::avaliarTabagismo. */
 export type StatusTabagismo = "nunca" | "ex_fumante" | "fumante";
+/** Um item da lista "pontos que merecem atenção" do relatório da consulta —
+ *  ver lib/nutrition/calculations.ts::montarRelatorioConsulta. `prioridade`
+ *  é um número (menor = mais importante) usado só pra ordenar a exibição. */
+export interface PontoAtencao {
+  chave: string;
+  titulo: string;
+  prioridade: number;
+  categoria: "condicao_saude" | "habito_vida";
+  texto: string;
+}
+/** Relatório da consulta em blocos, gerado por
+ *  lib/nutrition/calculations.ts::montarRelatorioConsulta e salvo em
+ *  avaliacoes_nutricionais.relatorio (jsonb). Usado pela tela de resultado
+ *  da consulta e pelo Histórico. */
+export interface RelatorioConsulta {
+  imc: number;
+  classificacaoImc: string;
+  tmb: number;
+  tdee: number;
+  metaCalorica: number;
+  resumoGeral: string;
+  pontosFortes: string[];
+  pontosAtencao: PontoAtencao[];
+  condicoesSaude: PontoAtencao[];
+  habitosVida: PontoAtencao[];
+  alimentacao: string;
+  prioridades: string[];
+  mensagemFinal: string;
+  avisoMetaPeso: string | null;
+}
 export interface Perfil {
   id: string;
   nome: string;
@@ -94,6 +124,11 @@ export interface AvaliacaoNutricional {
    *  salvo no momento da geração pra exibir depois no Histórico exatamente
    *  como foi mostrado na hora. Null em consultas anteriores a essa coluna. */
   resumo: string | null;
+  /** Relatório da consulta em blocos (resumo geral, pontos fortes, pontos de
+   *  atenção priorizados, condições de saúde, hábitos de vida, alimentação,
+   *  prioridades e mensagem final) — ver lib/nutrition/calculations.ts::
+   *  RelatorioConsulta. Null em avaliações anteriores a essa coluna. */
+  relatorio: RelatorioConsulta | null;
   imc: number;
   classificacao_imc: string;
   tmb: number;

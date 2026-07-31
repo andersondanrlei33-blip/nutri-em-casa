@@ -1673,6 +1673,7 @@ export function gerarResultadoAvaliacao(
     horasSono?: string | null;
     ingestaoAguaCopos?: string | null;
     dietaAnterior?: string | null;
+    historicoDietetico?: string | null;
     doencasFamiliares?: string[];
     rotinaTrabalho?: string | null;
     mastigacao?: string | null;

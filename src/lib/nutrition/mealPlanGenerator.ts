@@ -179,6 +179,13 @@ interface CandidataResumo {
   carboidrato_g: number;
   gordura_g: number;
 }
+interface NotaPreferencias {
+  texto: string | null;
+  /** Preferências que NÃO apareceram em nenhuma refeição real do plano —
+   *  usado por removerMencoesDePreferencias pra cortar qualquer frase que a
+   *  IA tenha escrito por conta própria sobre elas (ver função abaixo). */
+  preferenciasNaoAtendidas: string[];
+}
 /**
  * Confere se as preferências alimentares do paciente REALMENTE aparecem em
  * alguma refeição do plano já montado — nunca confiamos no que a IA diz
@@ -196,14 +203,16 @@ function notaSobrePreferenciasNaoAtendidas(
   refeicoes: RefeicaoGerada[],
   receitasDisponiveis: Receita[],
   filtro: FiltroReceitas
-): string | null {
+): NotaPreferencias {
   const preferencias = preferenciasAlimentares.map((p) => p.trim()).filter(Boolean);
-  if (preferencias.length === 0) return null;
+  if (preferencias.length === 0) return { texto: null, preferenciasNaoAtendidas: [] };
   const textoPlano = normalizar(refeicoes.map((r) => `${r.nome_refeicao} ${r.descricao}`).join(" | "));
   const notas: string[] = [];
+  const preferenciasNaoAtendidas: string[] = [];
   for (const preferencia of preferencias) {
     const termo = normalizar(preferencia);
     if (termo.length < 3 || textoPlano.includes(termo)) continue;
+    preferenciasNaoAtendidas.push(preferencia);
     // Não está em nenhuma refeição real — procura uma alternativa segura na
     // biblioteca que compartilhe a primeira palavra significativa (ex:
     // "pudim" de "pudim de leite condensado"), já filtrada por
@@ -239,7 +248,27 @@ function notaSobrePreferenciasNaoAtendidas(
       );
     }
   }
-  return notas.length > 0 ? notas.join(" ") : null;
+  return { texto: notas.length > 0 ? notas.join(" ") : null, preferenciasNaoAtendidas };
+}
+/**
+ * Corta do texto livre da IA qualquer frase que mencione uma preferência que
+ * não entrou no plano — mesmo com a instrução no prompt pra IA não comentar
+ * isso, na prática ela às vezes escreve por conta própria (e já foi vista
+ * errando o motivo: dizendo "ausência de condições restritivas" pra uma
+ * paciente com diabetes tipo 1 cadastrada). Como não dá pra confiar que o
+ * prompt sozinho evita isso sempre, o código garante determinístico: essa
+ * frase nunca aparece do lado da nota correta que o próprio código escreve
+ * logo depois, evitando tanto duplicidade quanto informação errada.
+ */
+function removerMencoesDePreferencias(texto: string, termos: string[]): string {
+  const termosNormalizados = termos.map((t) => normalizar(t)).filter((t) => t.length >= 3);
+  if (termosNormalizados.length === 0) return texto;
+  const frases = texto.split(/(?<=[.!?])\s+/);
+  const frasesFiltradas = frases.filter((frase) => {
+    const fraseNormalizada = normalizar(frase);
+    return !termosNormalizados.some((termo) => fraseNormalizada.includes(termo));
+  });
+  return frasesFiltradas.join(" ").trim();
 }
 async function gerarPlanoComIA(
   avaliacao: AvaliacaoNutricional,
@@ -302,8 +331,9 @@ ${
   orientacoesCondicoes.length > 0
     ? `\nCONDIÇÕES DE SAÚDE — estas orientações têm PRIORIDADE sobre as preferências alimentares acima quando ` +
       `houver conflito (ex: paciente prefere doce mas tem diabetes → modere o doce, não ignore a condição). NÃO ` +
-      `escreva em "observacoes_nutricionista" nenhuma afirmação sobre ter incluído ou não uma preferência do ` +
-      `paciente — isso é conferido e explicado pelo código, não pela IA:\n` +
+      `mencione em "observacoes_nutricionista" nenhuma preferência alimentar específica do paciente, nem para ` +
+      `dizer que foi incluída, nem para dizer que foi excluída — isso é conferido e explicado pelo código, não ` +
+      `pela IA. Fale só sobre a composição geral do plano (grupos alimentares, distribuição de macros, hidratação):\n` +
       orientacoesCondicoes.map((o) => `- ${o}`).join("\n") +
       "\n"
     : ""
@@ -424,13 +454,21 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
     }
     return { ...refeicao, receita_id: receitaIdValido, quantidade_porcoes: quantidadePorcoes };
   });
-  const notaPreferencias = notaSobrePreferenciasNaoAtendidas(
+  const { texto: notaPreferencias, preferenciasNaoAtendidas } = notaSobrePreferenciasNaoAtendidas(
     avaliacao.preferencias_alimentares,
     refeicoesValidadas,
     receitasDisponiveis,
     filtro
   );
-  const observacoesFinal = [plano.observacoes_nutricionista, notaPreferencias].filter(Boolean).join(" ");
+  // Mesmo com a instrução no prompt pra IA não comentar sobre preferências
+  // incluídas/excluídas, ela às vezes escreve por conta própria — corta
+  // qualquer frase que fale sobre uma preferência não atendida antes de
+  // colar a nota (correta) escrita pelo código, pra não duplicar/contradizer.
+  const observacoesIALimpas = removerMencoesDePreferencias(
+    plano.observacoes_nutricionista,
+    preferenciasNaoAtendidas
+  );
+  const observacoesFinal = [observacoesIALimpas, notaPreferencias].filter(Boolean).join(" ");
   return { refeicoes: refeicoesValidadas, observacoes_nutricionista: observacoesFinal };
 }
 /**
@@ -496,7 +534,10 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
       }
     });
   }
-  const notaPreferencias = notaSobrePreferenciasNaoAtendidas(
+  // Caminho determinístico: o texto abaixo é escrito pelo próprio código
+  // (não pela IA), então não tem o risco de duplicar/inventar motivo — só
+  // precisamos do texto da nota, sem usar removerMencoesDePreferencias aqui.
+  const { texto: notaPreferencias } = notaSobrePreferenciasNaoAtendidas(
     avaliacao.preferencias_alimentares,
     refeicoes,
     receitasDisponiveis,

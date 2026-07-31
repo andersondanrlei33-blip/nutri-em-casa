@@ -28,6 +28,7 @@ export function Topbar({ aoAbrirMenu }: { aoAbrirMenu: () => void }) {
         )}
         <Link
           href="/perfil"
+          data-tour="link-perfil"
           className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-black/[0.03]"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-brand-700">

@@ -176,6 +176,22 @@ export interface MetasRefeicao {
   gorduraG: number;
 }
 /**
+ * Identifica o "prato feito" tradicional brasileiro (arroz + feijão como
+ * base) pelos ingredientes da receita — não por uma tag manual, pra não
+ * depender de cadastro consistente. Usado só como critério de DESEMPATE em
+ * escolherReceita: entre receitas com distância parecida da meta, prioriza
+ * esse padrão, porque é como a maior parte da população realmente come no
+ * dia a dia (não é "mais uma opção entre várias equivalentes" — é a base
+ * mais comum de almoço/jantar no Brasil, especialmente pro público sensível
+ * a preço que o app já prioriza via `custo`).
+ */
+function ehPratoTradicional(receita: Receita): boolean {
+  const nomesIngredientes = receita.ingredientes.map((i) => normalizar(i.nome));
+  const temArroz = nomesIngredientes.some((n) => n.includes("arroz"));
+  const temFeijao = nomesIngredientes.some((n) => n.includes("feij"));
+  return temArroz && temFeijao;
+}
+/**
  * Escolhe a receita mais equilibrada em relação às metas de calorias E
  * macronutrientes da refeição — antes só olhava pra calorias, o que podia
  * escolher uma receita rica em proteína/gordura mas pobre em carboidrato
@@ -183,6 +199,12 @@ export interface MetasRefeicao {
  * alvo (% de erro), pra que um erro de 10g numa meta pequena pese o mesmo
  * que 10g numa meta grande. Evita repetir uma receita já usada recentemente
  * na semana quando há alternativa.
+ *
+ * Entre receitas com distância parecida da meta, dá uma vantagem pro "prato
+ * feito" tradicional (arroz + feijão) — um desconto de 15% na distância
+ * calculada, não um bônus que ignora a meta nutricional. Isso faz esse
+ * padrão vencer empates e quase-empates (o caso comum), mas ainda perde pra
+ * uma receita bem mais alinhada à meta quando a diferença for grande.
  */
 export function escolherReceita(
   candidatas: Receita[],
@@ -192,13 +214,15 @@ export function escolherReceita(
   if (candidatas.length === 0) return null;
   const naoRepetidas = candidatas.filter((r) => !usadasRecentemente.has(r.id));
   const pool = naoRepetidas.length > 0 ? naoRepetidas : candidatas;
-
   const desvio = (valor: number, alvo: number) => (alvo > 0 ? Math.abs(valor - alvo) / alvo : 0);
-  const distancia = (r: Receita) =>
-    desvio(r.calorias, metas.calorias) +
-    desvio(r.proteina_g, metas.proteinaG) +
-    desvio(r.carboidrato_g, metas.carboidratoG) +
-    desvio(r.gordura_g, metas.gorduraG);
-
+  const DESCONTO_PRATO_TRADICIONAL = 0.85;
+  const distancia = (r: Receita) => {
+    const bruta =
+      desvio(r.calorias, metas.calorias) +
+      desvio(r.proteina_g, metas.proteinaG) +
+      desvio(r.carboidrato_g, metas.carboidratoG) +
+      desvio(r.gordura_g, metas.gorduraG);
+    return ehPratoTradicional(r) ? bruta * DESCONTO_PRATO_TRADICIONAL : bruta;
+  };
   return pool.reduce((melhor, atual) => (distancia(atual) < distancia(melhor) ? atual : melhor));
 }

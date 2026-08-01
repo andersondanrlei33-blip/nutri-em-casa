@@ -67,10 +67,16 @@ export const r2GorduraConcentradaTronco: Regra = (dados) => {
 };
 
 /** R3 — Relação cintura-quadril acima da faixa de referência (mesma tag de R2 → serão fundidas) */
-export const r3RelacaoCinturaQuadrilElevada: Regra = (dados) => {
+export const r3RelacaoCinturaQuadrilElevada: Regra = (dados, perfil) => {
   const rcq = dados.dadosAdicionais.relacaoCinturaQuadril;
-  if (rcq.valor === null || rcq.refMax === undefined || rcq.refMax === null) return null;
-  if (rcq.valor <= rcq.refMax) return null;
+  if (rcq.valor === null) return null;
+
+  // O app não extrai um refMax específico do documento hoje — cai no corte
+  // padrão por sexo biológico (referência amplamente usada, ex: OMS 2008):
+  // 0.90 pra homens, 0.85 pra mulheres. Mesmo princípio de fallback já usado
+  // em R4 pra gordura visceral (refMax ?? 9).
+  const refMax = rcq.refMax ?? (perfil.sexo === "F" ? 0.85 : 0.9);
+  if (rcq.valor <= refMax) return null;
 
   return {
     codigoRegra: "R3",
@@ -78,7 +84,7 @@ export const r3RelacaoCinturaQuadrilElevada: Regra = (dados) => {
     codigoBibliotecaSugerido: "AVALFISICA-GORDURA-CONCENTRADA-TRONCO",
     tagTematica: "gordura_abdominal",
     usoNoResumo: false,
-    variaveis: { rcq: rcq.valor, rcqRefMax: rcq.refMax },
+    variaveis: { rcq: rcq.valor, rcqRefMax: refMax },
   };
 };
 

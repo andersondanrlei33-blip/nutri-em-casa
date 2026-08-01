@@ -11,13 +11,20 @@
 // desse campo simplesmente não dispara, em vez de dar erro ou inventar valor.
 // ============================================================================
 
-import type { AvaliacaoFisicaExtraida, Genero, NivelAtividade, ObjetivoNutricional, CondicaoSaude } from "@/types/domain";
+import type {
+  AvaliacaoFisicaExtraida,
+  Genero,
+  NivelAtividade,
+  ObjetivoNutricional,
+  CondicaoSaude,
+  SegmentoCorporalExtraido,
+} from "@/types/domain";
 import { classificarPercentualGordura } from "@/lib/nutrition/avaliacaoFisica";
 import { processarAvaliacao } from "./motor";
 import { montarConsultaAvaliacaoFisica } from "./montarConsulta";
 import { BibliotecaClinicaReal } from "./bibliotecaSelector";
 import { classificarImcDetalhado } from "./util";
-import type { AvaliacaoFisicaNormalizada, Categoria, Objetivo, PerfilPaciente } from "./types";
+import type { AvaliacaoFisicaNormalizada, Categoria, Objetivo, PerfilPaciente, SegmentarCorpo } from "./types";
 // Nota: importa direto de ./motor, ./montarConsulta e ./util (não de
 // ./index) pra evitar import circular, já que index.ts reexporta este arquivo.
 
@@ -88,6 +95,21 @@ function classificacaoGorduraParaCategoria(percentual: number, genero: Genero): 
   return "acima"; // "Acima do recomendado"
 }
 
+/** Traduz o formato simples de segmento extraído da foto (kg +
+ *  percentualPadrao) pro formato rico que o motor espera (SegmentarCorpo),
+ *  que também tem um campo `categoria` por segmento — hoje não extraído da
+ *  foto (nenhuma regra atual usa a categoria por segmento, só o
+ *  percentualPadrao — ver R2/R9 em regras.ts), então fica sempre null. */
+function paraSegmentarCorpo(seg: SegmentoCorporalExtraido | null): SegmentarCorpo | null {
+  if (!seg) return null;
+  const partes = ["bracoEsquerdo", "bracoDireito", "tronco", "pernaEsquerda", "pernaDireita"] as const;
+  const resultado = {} as SegmentarCorpo;
+  for (const parte of partes) {
+    resultado[parte] = { kg: seg[parte].kg, percentualPadrao: seg[parte].percentualPadrao, categoria: null };
+  }
+  return resultado;
+}
+
 export interface DadosConhecidosConsulta {
   imc: number;
   classificacaoImc: string;
@@ -155,20 +177,27 @@ export function paraAvaliacaoFisicaNormalizada(
           : null,
     },
     segmentar: {
-      // O app ainda não extrai dados por segmento corporal (braço/tronco/
-      // perna) — quando isso existir, popular aqui habilita R2/R3/R9.
-      massaMagra: null,
-      massaGordura: null,
+      massaMagra: paraSegmentarCorpo(dados.segmentar?.massaMagra ?? null),
+      massaGordura: paraSegmentarCorpo(dados.segmentar?.massaGordura ?? null),
     },
     dadosAdicionais: {
+      // O app ainda não extrai a pontuação geral do aparelho (ex: InBody
+      // Score) nem os "controles" (quanto falta ganhar/perder de peso,
+      // gordura ou músculo) — nenhum dos laudos usados até agora traz esse
+      // dado de forma padronizada o bastante pra extrair com segurança.
       pontuacaoGeral: { valor: null, max: null },
-      pesoIdealKg: null,
+      pesoIdealKg: dados.pesoIdealKg ?? null,
       controlePesoKg: null,
       controleGorduraKg: null,
       controleMuscularKg: null,
       taxaMetabolicaBasalKcal: dados.tmbMedidoKcal,
-      relacaoCinturaQuadril: { valor: null },
-      nivelGorduraVisceral: { valor: null },
+      // refMax da RCQ: usa a que vier do documento (nenhum campo extrai isso
+      // hoje) — cai no padrão da regra R3 (ver regras.ts), que já aplica o
+      // corte por gênero (0.90 masculino / 0.85 feminino, referência OMS)
+      // quando refMax não é informado, mesmo padrão de fallback já usado
+      // por R4 pra gordura visceral.
+      relacaoCinturaQuadril: { valor: dados.relacaoCinturaQuadril ?? null },
+      nivelGorduraVisceral: { valor: dados.nivelGorduraVisceral ?? null },
       grauObesidadePercentual: { valor: null },
     },
   };
@@ -246,12 +275,21 @@ export async function gerarInterpretacoesAvaliacaoFisica(
    *  pra biblioteca pra rotacionar as variantes em vez de sortear ao acaso
    *  (ver bibliotecaSelector.ts::escolherRotativo). Se não vier informado,
    *  assume 1 (sempre a primeira variante de cada categoria). */
-  numeroConsulta: number = 1
+  numeroConsulta: number = 1,
+  /** Dados + conhecidos (peso/altura/idade/gênero na época) da avaliação
+   *  física anterior do paciente, quando houver — habilita a regra de
+   *  evolução (R12) em regras.ts, que compara % de gordura e massa muscular
+   *  atuais com os da consulta anterior. Null quando não há avaliação
+   *  anterior com dados de avaliação física (ex: primeira consulta), ou
+   *  quando a busca falhou — R12 simplesmente não dispara nesse caso, mesmo
+   *  comportamento de antes. */
+  anterior: { dados: AvaliacaoFisicaExtraida; conhecidos: DadosConhecidosConsulta } | null = null
 ): Promise<InterpretacoesAvaliacaoFisica> {
   if (!dados || dados.percentualGordura == null) return { textoCard: null, mancheteResumo: null };
 
   try {
     const normalizado = paraAvaliacaoFisicaNormalizada(dados, conhecidos);
+    const normalizadoAnterior = anterior ? paraAvaliacaoFisicaNormalizada(anterior.dados, anterior.conhecidos) : null;
     const perfil = paraPerfilPaciente({
       usuarioId: perfilParams.usuarioId,
       objetivo: perfilParams.objetivo,
@@ -261,7 +299,7 @@ export async function gerarInterpretacoesAvaliacaoFisica(
       condicoesSaude: perfilParams.condicoesSaude,
     });
     const biblioteca = new BibliotecaClinicaReal();
-    const insights = processarAvaliacao(normalizado, perfil, null);
+    const insights = processarAvaliacao(normalizado, perfil, normalizadoAnterior);
 
     const textoCard = await montarConsultaAvaliacaoFisica(insights, normalizado, perfil, biblioteca, numeroConsulta);
 

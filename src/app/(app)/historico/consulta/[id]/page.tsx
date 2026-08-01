@@ -4,6 +4,7 @@ import { ChevronLeft, Stethoscope, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/Card";
 import { formatarData } from "@/lib/utils/date";
+import { RelatorioEmCartoes } from "@/components/RelatorioEmCartoes";
 import type { AvaliacaoNutricional } from "@/types/domain";
 
 export default async function DetalheConsultaPage({ params }: { params: Promise<{ id: string }> }) {
@@ -69,39 +70,49 @@ export default async function DetalheConsultaPage({ params }: { params: Promise<
         <Metrica label="Água" valor={`${(avaliacao.meta_agua_ml / 1000).toFixed(1)} L`} />
       </div>
 
-      {(avaliacao.avaliacao_fisica_arquivo_nome || avaliacao.avaliacao_fisica_dados) && (
-        <Card className="mt-6">
-          <CardContent className="text-sm text-foreground">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Avaliação Física</h2>
-            {avaliacao.avaliacao_fisica_arquivo_nome && (
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 shrink-0 text-brand-600" />
-                <LinkArquivoAvaliacaoFisica url={linkArquivoAvaliacaoFisica} nome={avaliacao.avaliacao_fisica_arquivo_nome} />
-              </div>
-            )}
-            {avaliacao.avaliacao_fisica_dados?.percentualGordura != null && (
-              <p className="mt-2 leading-relaxed text-muted">
-                % de gordura: {avaliacao.avaliacao_fisica_dados.percentualGordura}%
-                {avaliacao.avaliacao_fisica_dados.classificacaoAvaliador
-                  ? ` (${avaliacao.avaliacao_fisica_dados.classificacaoAvaliador})`
-                  : ""}
-              </p>
-            )}
-            {avaliacao.avaliacao_fisica_dados?.resumoTexto && (
-              <p className="mt-2 leading-relaxed text-muted">{avaliacao.avaliacao_fisica_dados.resumoTexto}</p>
-            )}
-          </CardContent>
-        </Card>
+      {avaliacao.avaliacao_fisica_arquivo_nome && (
+        <div className="mt-4 flex items-center gap-2 text-sm text-foreground">
+          <FileText className="h-4 w-4 shrink-0 text-brand-600" />
+          <LinkArquivoAvaliacaoFisica url={linkArquivoAvaliacaoFisica} nome={avaliacao.avaliacao_fisica_arquivo_nome} />
+        </div>
       )}
 
-      {textoResumo && (
-        <Card className="mt-6">
-          <CardContent className="space-y-3 text-sm leading-relaxed text-foreground">
-            {textoResumo.split("\n\n").map((paragrafo, i) => (
-              <p key={i}>{paragrafo}</p>
-            ))}
-          </CardContent>
-        </Card>
+      {/* Consultas com o relatório novo (em blocos) usam o mesmo componente
+       *  de cartões que a tela de resultado logo após finalizar a consulta
+       *  (ConsultaWizard.tsx) — pra nunca mais divergir uma tela da outra.
+       *  Consultas salvas antes dessa coluna existir (avaliacao.relatorio
+       *  null) caem pro texto corrido antigo, único jeito que tinham. */}
+      {avaliacao.relatorio ? (
+        <RelatorioEmCartoes relatorio={avaliacao.relatorio} />
+      ) : (
+        <>
+          {avaliacao.avaliacao_fisica_dados?.percentualGordura != null && (
+            <Card className="mt-6">
+              <CardContent className="text-sm text-foreground">
+                <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">Avaliação Física</h2>
+                <p className="leading-relaxed text-muted">
+                  % de gordura: {avaliacao.avaliacao_fisica_dados.percentualGordura}%
+                  {avaliacao.avaliacao_fisica_dados.classificacaoAvaliador
+                    ? ` (${avaliacao.avaliacao_fisica_dados.classificacaoAvaliador})`
+                    : ""}
+                </p>
+                {avaliacao.avaliacao_fisica_dados.resumoTexto && (
+                  <p className="mt-2 leading-relaxed text-muted">{avaliacao.avaliacao_fisica_dados.resumoTexto}</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {textoResumo && (
+            <Card className="mt-6">
+              <CardContent className="space-y-3 text-sm leading-relaxed text-foreground">
+                {textoResumo.split("\n\n").map((paragrafo, i) => (
+                  <p key={i}>{paragrafo}</p>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       {avaliacao.observacoes && (

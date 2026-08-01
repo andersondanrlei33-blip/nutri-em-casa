@@ -1,5 +1,5 @@
-import { CheckCircle2 } from "lucide-react";
-import type { RelatorioConsulta } from "@/types/domain";
+import { CheckCircle2, ArrowUp, ArrowDown, ArrowRight } from "lucide-react";
+import type { EvolucaoMetrica, RelatorioConsulta } from "@/types/domain";
 
 /**
  * Renderiza o relatório de consulta em cartões (resumo geral, composição
@@ -41,6 +41,19 @@ export function RelatorioEmCartoes({ relatorio }: { relatorio: RelatorioConsulta
             {relatorio.composicaoCorporal.textoComparativo && (
               <p className="mt-2.5 leading-relaxed text-muted">{relatorio.composicaoCorporal.textoComparativo}</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {relatorio.evolucaoComposicaoCorporal && relatorio.evolucaoComposicaoCorporal.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">
+            Evolução desde a última avaliação
+          </h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {relatorio.evolucaoComposicaoCorporal.map((metrica) => (
+              <CartaoEvolucaoMetrica key={metrica.chave} metrica={metrica} />
+            ))}
           </div>
         </div>
       )}
@@ -128,6 +141,81 @@ export function RelatorioEmCartoes({ relatorio }: { relatorio: RelatorioConsulta
           {relatorio.mensagemFinal}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Cores por tendência — mesma paleta semântica usada no resto do relatório
+ *  (verde = pontos fortes, âmbar = atenção), com vermelho adicionado só
+ *  aqui pra "desfavoravel" (nenhum outro cartão do relatório usa vermelho,
+ *  então isso automaticamente chama mais atenção quando aparece). */
+const CORES_TENDENCIA_EVOLUCAO: Record<
+  EvolucaoMetrica["tendencia"],
+  { badgeBg: string; badgeText: string; barra: string; rotulo: string }
+> = {
+  favoravel: { badgeBg: "bg-green-50", badgeText: "text-green-700", barra: "bg-green-500", rotulo: "melhora" },
+  estavel: { badgeBg: "bg-amber-50", badgeText: "text-amber-700", barra: "bg-amber-400", rotulo: "estável" },
+  desfavoravel: { badgeBg: "bg-red-50", badgeText: "text-red-700", barra: "bg-red-500", rotulo: "atenção" },
+};
+
+function IconeSetaVariacao({ delta }: { delta: number }) {
+  if (delta > 0) return <ArrowUp className="h-3 w-3" />;
+  if (delta < 0) return <ArrowDown className="h-3 w-3" />;
+  return <ArrowRight className="h-3 w-3" />;
+}
+
+/** Um cartão comparativo de uma métrica (peso, % de gordura, massa magra ou
+ *  massa gorda) entre a consulta anterior e a atual — barra horizontal
+ *  simples (sem biblioteca externa) mostrando os dois valores lado a lado,
+ *  seta de tendência, variação absoluta e a interpretação clínica em texto.
+ *  Ver EvolucaoMetrica em types/domain.ts e montarEvolucaoComposicaoCorporal
+ *  em lib/nutrition/calculations.ts. */
+function CartaoEvolucaoMetrica({ metrica }: { metrica: EvolucaoMetrica }) {
+  const cor = CORES_TENDENCIA_EVOLUCAO[metrica.tendencia];
+  const maiorValor = Math.max(metrica.valorAnterior, metrica.valorAtual, 0.0001);
+  const larguraAnterior = (metrica.valorAnterior / maiorValor) * 100;
+  const larguraAtual = (metrica.valorAtual / maiorValor) * 100;
+  const sinalDelta = metrica.deltaAbsoluto > 0 ? "+" : "";
+
+  return (
+    <div className="rounded-xl border border-border bg-white px-4 py-3.5 text-sm text-foreground">
+      <div className="mb-2.5 flex items-center justify-between">
+        <span className="text-xs text-muted">{metrica.rotulo}</span>
+        <span
+          className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${cor.badgeBg} ${cor.badgeText}`}
+        >
+          <IconeSetaVariacao delta={metrica.deltaAbsoluto} />
+          {cor.rotulo}
+        </span>
+      </div>
+
+      <div className="mb-2.5 flex flex-wrap items-baseline gap-1.5">
+        <span className="text-xs text-muted">
+          {metrica.valorAnterior}
+          {metrica.unidade}
+        </span>
+        <ArrowRight className="h-3 w-3 text-muted" />
+        <span className="text-lg font-bold">
+          {metrica.valorAtual}
+          {metrica.unidade}
+        </span>
+        <span className={`ml-1 text-xs font-medium ${cor.badgeText}`}>
+          {sinalDelta}
+          {metrica.deltaAbsoluto}
+          {metrica.unidade}
+        </span>
+      </div>
+
+      <div className="mb-2.5 flex flex-col gap-1" aria-hidden="true">
+        <div className="h-1.5 rounded-full bg-black/[0.04]">
+          <div className="h-1.5 rounded-full bg-black/20" style={{ width: `${larguraAnterior}%` }} />
+        </div>
+        <div className="h-1.5 rounded-full bg-black/[0.04]">
+          <div className={`h-1.5 rounded-full ${cor.barra}`} style={{ width: `${larguraAtual}%` }} />
+        </div>
+      </div>
+
+      <p className="text-xs leading-relaxed text-muted">{metrica.interpretacao}</p>
     </div>
   );
 }

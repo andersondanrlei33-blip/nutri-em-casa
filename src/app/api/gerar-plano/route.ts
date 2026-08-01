@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { gerarResultadoAvaliacao, calcularIMC, classificarIMC } from "@/lib/nutrition/calculations";
 import { gerarPlanoAlimentar } from "@/lib/nutrition/mealPlanGenerator";
 import { extrairAvaliacaoFisica, type TipoImagemAceito } from "@/lib/nutrition/avaliacaoFisica";
-import { gerarInterpretacoesAvaliacaoFisica } from "@/lib/avaliacaoFisica";
+import { gerarInterpretacoesAvaliacaoFisica, type DadosConhecidosConsulta } from "@/lib/avaliacaoFisica";
 import type { AvaliacaoFisicaExtraida, AvaliacaoNutricional, Receita } from "@/types/domain";
 
 /** Deduz o media_type pelo nome do arquivo — o bucket guarda o arquivo mas
@@ -209,6 +209,45 @@ export async function POST(request: Request) {
     }
   }
 
+  // Busca a avaliação física da consulta anterior (se houver), pra habilitar
+  // a regra de evolução (R12) do motor de interpretação — compara % de
+  // gordura e massa muscular da avaliação atual com a mais recente que
+  // também tinha avaliação física anexada e lida com sucesso. Só busca em
+  // consultas de retorno (a 1ª nunca tem "anterior"). Nunca trava a
+  // consulta: se a busca falhar ou não houver avaliação física anterior,
+  // segue com null — R12 simplesmente não dispara, mesmo comportamento de
+  // antes desta mudança.
+  let avaliacaoFisicaAnterior: { dados: AvaliacaoFisicaExtraida; conhecidos: DadosConhecidosConsulta } | null = null;
+  if (retorno) {
+    const { data: anteriorRow } = await supabase
+      .from("avaliacoes_nutricionais")
+      .select("peso_kg, altura_cm, idade, genero, avaliacao_fisica_dados")
+      .eq("usuario_id", user.id)
+      .not("avaliacao_fisica_dados", "is", null)
+      .order("criado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (anteriorRow?.avaliacao_fisica_dados) {
+      const imcAnterior = calcularIMC({
+        pesoKg: anteriorRow.peso_kg,
+        alturaCm: anteriorRow.altura_cm,
+        idade: anteriorRow.idade,
+        genero: anteriorRow.genero,
+      });
+      avaliacaoFisicaAnterior = {
+        dados: anteriorRow.avaliacao_fisica_dados as AvaliacaoFisicaExtraida,
+        conhecidos: {
+          imc: imcAnterior,
+          classificacaoImc: classificarIMC(imcAnterior),
+          genero: anteriorRow.genero,
+          idade: anteriorRow.idade,
+          alturaCm: anteriorRow.altura_cm,
+          pesoKg: anteriorRow.peso_kg,
+        },
+      };
+    }
+  }
+
   // Interpretação clínica da avaliação física (motor de regras novo, ver
   // lib/avaliacaoFisica/) — precisa rodar antes de gerarResultadoAvaliacao
   // porque envolve a Biblioteca Clínica (assíncrono), e calculations.ts é
@@ -242,7 +281,10 @@ export async function POST(request: Request) {
       // variantes do relatório em blocos) — repassado aqui pra rotacionar
       // também os textos da Biblioteca Clínica da avaliação física, em vez
       // de sortear ao acaso (ver bibliotecaSelector.ts::escolherRotativo).
-      numeroConsulta
+      numeroConsulta,
+      // Avaliação física da consulta anterior (buscada acima) — habilita a
+      // regra de evolução (R12).
+      avaliacaoFisicaAnterior
     );
 
   const resultado = gerarResultadoAvaliacao({

@@ -5,6 +5,7 @@ import { gerarResultadoAvaliacao, calcularIMC, classificarIMC } from "@/lib/nutr
 import { gerarPlanoAlimentar } from "@/lib/nutrition/mealPlanGenerator";
 import { extrairAvaliacaoFisica, type TipoImagemAceito } from "@/lib/nutrition/avaliacaoFisica";
 import { gerarInterpretacoesAvaliacaoFisica, type DadosConhecidosConsulta } from "@/lib/avaliacaoFisica";
+import { calcularProximaLiberacao, INTERVALO_MINIMO_ENTRE_CONSULTAS_DIAS } from "@/lib/utils/date";
 import type { AvaliacaoFisicaExtraida, AvaliacaoNutricional, Receita } from "@/types/domain";
 
 /** Deduz o media_type pelo nome do arquivo — o bucket guarda o arquivo mas
@@ -176,6 +177,37 @@ export async function POST(request: Request) {
     .eq("usuario_id", user.id);
   const numeroConsulta = (consultasAnteriores ?? 0) + 1;
   const retorno = numeroConsulta > 1;
+
+  // Trava de intervalo mínimo entre consultas (ver
+  // INTERVALO_MINIMO_ENTRE_CONSULTAS_DIAS em lib/utils/date.ts): a
+  // nutricionista atende em ciclos de 15 dias, então uma nova consulta só é
+  // aceita a partir desse número de dias após a última. A tela de consulta
+  // (consulta/page.tsx) já esconde o formulário antes disso, mas essa
+  // validação aqui é a que realmente impede a chamada direta da API.
+  if (retorno) {
+    const { data: ultimaConsulta } = await supabase
+      .from("avaliacoes_nutricionais")
+      .select("criado_em")
+      .eq("usuario_id", user.id)
+      .order("criado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (ultimaConsulta) {
+      const proximaLiberacao = calcularProximaLiberacao(ultimaConsulta.criado_em);
+      if (proximaLiberacao.getTime() > Date.now()) {
+        return NextResponse.json(
+          {
+            erro:
+              `Sua próxima consulta ainda não foi liberada. O intervalo mínimo entre consultas é de ` +
+              `${INTERVALO_MINIMO_ENTRE_CONSULTAS_DIAS} dias — você poderá consultar novamente a partir de ` +
+              `${proximaLiberacao.toLocaleDateString("pt-BR")}.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+  }
 
   // Regra de negócio: avaliação física é opcional na 1ª consulta, mas
   // obrigatória numa consulta de retorno (mesma regra aplicada no cliente

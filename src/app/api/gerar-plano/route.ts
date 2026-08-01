@@ -237,7 +237,12 @@ export async function POST(request: Request) {
         objetivo: dados.objetivo,
         nivelAtividade: dados.nivel_atividade,
         condicoesSaude: dados.condicoes_saude,
-      }
+      },
+      // Mesmo numeroConsulta já calculado acima (usado pela rotação de
+      // variantes do relatório em blocos) — repassado aqui pra rotacionar
+      // também os textos da Biblioteca Clínica da avaliação física, em vez
+      // de sortear ao acaso (ver bibliotecaSelector.ts::escolherRotativo).
+      numeroConsulta
     );
 
   const resultado = gerarResultadoAvaliacao({

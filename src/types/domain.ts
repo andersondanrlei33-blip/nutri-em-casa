@@ -87,6 +87,38 @@ export interface AvaliacaoFisicaExtraida {
    *  calcular sozinho se uma massa muscular é "alta" sem a faixa de
    *  referência que só o aparelho/documento sabe. */
   massaMuscularCategoria: "abaixo" | "normal" | "acima" | null;
+  /** Nível de gordura visceral (escala do aparelho, tipicamente 1-20 nos
+   *  laudos de bioimpedância tipo InBody/Fitdays). Habilita a regra R4
+   *  (atenção pra gordura visceral) em lib/avaliacaoFisica/regras.ts. */
+  nivelGorduraVisceral: number | null;
+  /** Relação cintura-quadril (RCQ/WHR), ex: 0.92 — só o número, sem
+   *  interpretação. Habilita a regra R3. */
+  relacaoCinturaQuadril: number | null;
+  /** Peso "ideal" calculado pelo próprio aparelho (não confundir com meta de
+   *  peso do paciente, que é outro campo). Habilita a regra R10. */
+  pesoIdealKg: number | null;
+  /** Análise por segmento corporal (braços, tronco, pernas), quando o
+   *  documento trouxer essa quebra — comum em laudos de bioimpedância mais
+   *  completos (InBody e similares). "percentualPadrao" é o % em relação ao
+   *  padrão de referência do aparelho pra aquele segmento (coluna comum
+   *  nesses laudos, ex: "% padrão" ou "% ideal" ao lado de cada segmento).
+   *  massaMagra habilita R9 (assimetria muscular); massaGordura habilita R2
+   *  (gordura concentrada no tronco). Null (no nível do segmento ou da
+   *  categoria inteira) quando o documento não traz essa informação —
+   *  nunca inventado. */
+  segmentar: {
+    massaMagra: SegmentoCorporalExtraido | null;
+    massaGordura: SegmentoCorporalExtraido | null;
+  } | null;
+}
+/** Um segmento (braço/tronco/perna) da análise segmentar de um laudo de
+ *  bioimpedância. Ver campo `segmentar` em AvaliacaoFisicaExtraida. */
+export interface SegmentoCorporalExtraido {
+  bracoEsquerdo: { kg: number | null; percentualPadrao: number | null };
+  bracoDireito: { kg: number | null; percentualPadrao: number | null };
+  tronco: { kg: number | null; percentualPadrao: number | null };
+  pernaEsquerda: { kg: number | null; percentualPadrao: number | null };
+  pernaDireita: { kg: number | null; percentualPadrao: number | null };
 }
 /** Resultado de cruzar o % de gordura da avaliação física com a
  *  classificação de IMC já calculada — ver

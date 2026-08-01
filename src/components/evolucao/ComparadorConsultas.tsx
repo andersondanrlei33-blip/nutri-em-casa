@@ -28,7 +28,7 @@ export function ComparadorConsultas({ avaliacoes }: { avaliacoes: AvaliacaoNutri
   const linhas: LinhaComparativa[] = useMemo(() => {
     if (!consultaA || !consultaB) return [];
     const favoravelPeso: "queda" | "alta" = consultaB.objetivo === "ganho_massa" ? "alta" : "queda";
-    return [
+    const linhas: LinhaComparativa[] = [
       { label: "Peso", valorA: consultaA.peso_kg, valorB: consultaB.peso_kg, unidade: " kg", favoravel: favoravelPeso },
       { label: "IMC", valorA: consultaA.imc, valorB: consultaB.imc, unidade: "", favoravel: favoravelPeso },
       { label: "TMB", valorA: consultaA.tmb, valorB: consultaB.tmb, unidade: " kcal", favoravel: "neutro" },
@@ -36,9 +36,55 @@ export function ComparadorConsultas({ avaliacoes }: { avaliacoes: AvaliacaoNutri
       { label: "Meta calórica", valorA: consultaA.meta_calorica, valorB: consultaB.meta_calorica, unidade: " kcal", favoravel: "neutro" },
       { label: "Proteína", valorA: consultaA.meta_proteina_g, valorB: consultaB.meta_proteina_g, unidade: "g", favoravel: "neutro" },
       { label: "Carboidrato", valorA: consultaA.meta_carboidrato_g, valorB: consultaB.meta_carboidrato_g, unidade: "g", favoravel: "neutro" },
-      { label: "Gordura", valorA: consultaA.meta_gordura_g, valorB: consultaB.meta_gordura_g, unidade: "g", favoravel: "neutro" },
+      { label: "Gordura (dieta)", valorA: consultaA.meta_gordura_g, valorB: consultaB.meta_gordura_g, unidade: "g", favoravel: "neutro" },
       { label: "Água recomendada", valorA: consultaA.meta_agua_ml, valorB: consultaB.meta_agua_ml, unidade: " ml", favoravel: "neutro" },
     ];
+
+    // Dados do laudo de avaliação física (bioimpedância) de cada lado — só
+    // entram na comparação quando AMBAS as consultas selecionadas têm o
+    // mesmo campo extraído. Sem isso, essas métricas (que já aparecem nos
+    // cartões de evolução da própria consulta) ficavam ausentes aqui, o
+    // comparador genérico entre duas consultas quaisquer.
+    const laudoA = consultaA.avaliacao_fisica_dados;
+    const laudoB = consultaB.avaliacao_fisica_dados;
+    if (laudoA?.percentualGordura != null && laudoB?.percentualGordura != null) {
+      linhas.push({
+        label: "% Gordura corporal",
+        valorA: laudoA.percentualGordura,
+        valorB: laudoB.percentualGordura,
+        unidade: "%",
+        favoravel: "queda",
+      });
+    }
+    if (laudoA?.massaMagraKg != null && laudoB?.massaMagraKg != null) {
+      linhas.push({
+        label: "Massa magra",
+        valorA: laudoA.massaMagraKg,
+        valorB: laudoB.massaMagraKg,
+        unidade: " kg",
+        favoravel: "alta",
+      });
+    }
+    if (laudoA?.massaGordaKg != null && laudoB?.massaGordaKg != null) {
+      linhas.push({
+        label: "Massa gorda",
+        valorA: laudoA.massaGordaKg,
+        valorB: laudoB.massaGordaKg,
+        unidade: " kg",
+        favoravel: "queda",
+      });
+    }
+    if (laudoA?.relacaoCinturaQuadril != null && laudoB?.relacaoCinturaQuadril != null) {
+      linhas.push({
+        label: "Relação cintura-quadril",
+        valorA: laudoA.relacaoCinturaQuadril,
+        valorB: laudoB.relacaoCinturaQuadril,
+        unidade: "",
+        favoravel: "queda",
+      });
+    }
+
+    return linhas;
   }, [consultaA, consultaB]);
 
   if (avaliacoes.length < 2) {

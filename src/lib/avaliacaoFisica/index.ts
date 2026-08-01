@@ -9,6 +9,8 @@ export * from "./regras";
 export * from "./motor";
 export * from "./bibliotecaSelector";
 export * from "./montarConsulta";
+export * from "./resumoGeral";
+export * from "./util";
 export * from "./ponte";
 
 import { processarAvaliacao } from "./motor";

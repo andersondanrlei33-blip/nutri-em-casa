@@ -42,7 +42,11 @@ export async function montarConsultaAvaliacaoFisica(
   insights: Insight[],
   dados: AvaliacaoFisicaNormalizada,
   perfil: PerfilPaciente,
-  biblioteca: BibliotecaClinica
+  biblioteca: BibliotecaClinica,
+  /** Número sequencial da consulta do paciente (1ª, 2ª, 3ª...) — repassado
+   *  pra biblioteca pra rotacionar as variantes (ver bibliotecaSelector.ts).
+   *  Se não vier informado, assume 1. */
+  numeroConsulta: number = 1
 ): Promise<string> {
   const blocos: string[] = [gerarAbertura(dados)];
 
@@ -52,15 +56,16 @@ export async function montarConsultaAvaliacaoFisica(
       codigoCategoria: insight.codigoBibliotecaSugerido,
       pacienteId: perfil.id,
       janelaDias: 90,
+      numeroConsulta,
     });
     blocos.push(preencherVariaveis(texto, insight.variaveis));
   }
 
   if (algumInsightPositivo(insights)) {
-    blocos.push(await biblioteca.selecionarElogio({ pacienteId: perfil.id, janelaDias: 90 }));
+    blocos.push(await biblioteca.selecionarElogio({ pacienteId: perfil.id, janelaDias: 90, numeroConsulta }));
   }
 
-  blocos.push(await biblioteca.selecionarMotivacional({ pacienteId: perfil.id, janelaDias: 90 }));
+  blocos.push(await biblioteca.selecionarMotivacional({ pacienteId: perfil.id, janelaDias: 90, numeroConsulta }));
 
   return blocos.join("\n\n");
 }

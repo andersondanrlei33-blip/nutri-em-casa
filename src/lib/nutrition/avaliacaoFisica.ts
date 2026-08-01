@@ -1,4 +1,4 @@
-import { getAnthropicClient, NUTRI_MODEL } from "@/lib/ai/anthropicClient";
+import { getAnthropicClient, NUTRI_MODEL_VISAO } from "@/lib/ai/anthropicClient";
 import type {
   AvaliacaoFisicaExtraida,
   ComposicaoCorporalResultado,
@@ -32,7 +32,11 @@ export async function extrairAvaliacaoFisica(
 
   try {
     const resposta = await anthropic.messages.create({
-      model: NUTRI_MODEL,
+      // Modelo mais forte que o resto do app (ver NUTRI_MODEL_VISAO em
+      // anthropicClient.ts) — essa é a única chamada de IA que precisa ler
+      // uma imagem com precisão numérica; um erro aqui (ex: confundir IMC
+      // com % de gordura) muda toda a interpretação clínica do relatório.
+      model: NUTRI_MODEL_VISAO,
       max_tokens: 1500,
       messages: [
         {

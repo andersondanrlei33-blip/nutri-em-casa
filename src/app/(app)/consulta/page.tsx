@@ -3,7 +3,8 @@ import { ConsultaWizard } from "@/components/consulta/ConsultaWizard";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { UserRound } from "lucide-react";
+import { UserRound, CalendarClock } from "lucide-react";
+import { calcularProximaLiberacao, INTERVALO_MINIMO_ENTRE_CONSULTAS_DIAS } from "@/lib/utils/date";
 import type { AvaliacaoNutricional } from "@/types/domain";
 
 export default async function ConsultaPage() {
@@ -35,6 +36,19 @@ export default async function ConsultaPage() {
 
   const perfilIncompleto = !perfil?.genero || !perfil?.data_nascimento;
 
+  // Trava de intervalo mínimo entre consultas (mesma regra aplicada de
+  // verdade em app/api/gerar-plano/route.ts) — aqui é só o bloqueio visual,
+  // pra não deixar a pessoa preencher os 40 campos da anamnese pra depois
+  // levar um erro ao finalizar. A data usada é sempre a da última consulta
+  // já feita (avaliacaoAnterior), buscada acima.
+  let proximaLiberacao: Date | null = null;
+  if (avaliacaoAnterior) {
+    const data = calcularProximaLiberacao(avaliacaoAnterior.criado_em);
+    if (data.getTime() > Date.now()) {
+      proximaLiberacao = data;
+    }
+  }
+
   if (perfilIncompleto) {
     return (
       <div className="mx-auto max-w-xl">
@@ -50,6 +64,29 @@ export default async function ConsultaPage() {
             </p>
             <Link href="/perfil">
               <Button className="mt-6">Ir para Meu Perfil</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (proximaLiberacao) {
+    return (
+      <div className="mx-auto max-w-xl">
+        <Card>
+          <CardContent className="py-10 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100">
+              <CalendarClock className="h-6 w-6 text-brand-600" />
+            </div>
+            <h2 className="text-lg font-semibold text-foreground">Sua próxima consulta ainda não foi liberada</h2>
+            <p className="mt-2 text-sm text-muted">
+              Pra acompanhar sua evolução com segurança, as consultas acontecem a cada{" "}
+              {INTERVALO_MINIMO_ENTRE_CONSULTAS_DIAS} dias. Você poderá fazer sua próxima consulta a partir de{" "}
+              <strong className="text-foreground">{proximaLiberacao.toLocaleDateString("pt-BR")}</strong>.
+            </p>
+            <Link href="/evolucao">
+              <Button className="mt-6">Ver minha evolução</Button>
             </Link>
           </CardContent>
         </Card>

@@ -10,6 +10,20 @@
 
 export type Categoria = "abaixo" | "normal" | "acima" | null;
 
+/**
+ * As 6 categorias do Módulo 1 (IMC) da Biblioteca Clínica — mais granulares
+ * que o `Categoria` de 3 níveis usado nas regras (Seção 5.4 da spec).
+ * Usadas pelo fallback do Resumo Geral quando não há avaliação física, ou
+ * quando há avaliação física mas nenhuma regra "manchete" disparou.
+ */
+export type CategoriaImcDetalhada =
+  | "BAIXO"
+  | "NORMAL"
+  | "SOBREPESO"
+  | "OBI"
+  | "OBII"
+  | "OBIII";
+
 export interface FaixaComReferencia {
   valor: number | null;
   refMin?: number | null;
@@ -69,6 +83,13 @@ export interface AvaliacaoFisicaNormalizada {
   obesidade: {
     imc: { valor: number | null };
     imcCategoria: Categoria;
+    /**
+     * Classificação de 6 níveis (Seção 5.4 da spec), derivada de `imc.valor`
+     * via `classificarImcDetalhado` (ver util.ts). Independente de
+     * `imcCategoria` (3 níveis) — as regras R1/R6/R7/R10 continuam usando
+     * `imcCategoria`; só o fallback do Resumo Geral usa este campo.
+     */
+    imcCategoriaDetalhada: CategoriaImcDetalhada | null;
     percentualGordura: { valor: number | null }; // PGC
     percentualGorduraCategoria: Categoria;
   };
@@ -128,5 +149,11 @@ export interface Insight {
   codigoBibliotecaSugerido: string;
   /** Insights com a mesma tag são fundidos em um único bloco de texto (ver motor.ts) */
   tagTematica?: string;
+  /**
+   * true = essa regra pode reescrever a frase de abertura do Resumo Geral
+   * do relatório (R1, R6, R7, R10, R12 — Seção 5.4 da spec). false = insight
+   * de detalhe, só aparece no card de Composição Corporal.
+   */
+  usoNoResumo: boolean;
   variaveis: Record<string, string | number | null | undefined>;
 }

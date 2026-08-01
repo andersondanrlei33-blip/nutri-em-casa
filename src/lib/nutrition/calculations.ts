@@ -14,9 +14,9 @@
  * (geração oficial do plano, salva no banco).
  */
 
-import type { AvaliacaoFisicaExtraida, CondicaoSaude, ConsumoAlcool, Genero, NivelAtividade, ObjetivoNutricional, StatusTabagismo, PontoAtencao, RelatorioConsulta } from "../../types/domain.ts";
+import type { AvaliacaoFisicaExtraida, CondicaoSaude, ConsumoAlcool, EvolucaoMetrica, Genero, NivelAtividade, ObjetivoNutricional, StatusTabagismo, PontoAtencao, RelatorioConsulta } from "../../types/domain.ts";
 import { normalizar } from "./receitaMatching.ts";
-import { avaliarComposicaoCorporal } from "./avaliacaoFisica.ts";
+import { avaliarComposicaoCorporal, classificarPercentualGordura } from "./avaliacaoFisica.ts";
 
 export interface DadosAntropometricos {
   pesoKg: number;
@@ -863,7 +863,7 @@ export function avaliarSegurancaMetaPeso(
 
 export interface ResultadoAvaliacao {
   imc: number;
-  classificacaoImc: string;
+  classificacaoImc: number;
   tmb: number;
   tdee: number;
   metaCalorica: number;
@@ -1773,6 +1773,224 @@ function montarResumoGeral(
   return `${base} ${cauda}`;
 }
 
+const ROTULOS_METRICA_EVOLUCAO: Record<EvolucaoMetrica["chave"], { rotulo: string; unidade: string }> = {
+  peso: { rotulo: "Peso", unidade: "kg" },
+  gordura: { rotulo: "Gordura corporal", unidade: "%" },
+  massaMagra: { rotulo: "Massa magra", unidade: "kg" },
+  massaGorda: { rotulo: "Massa gorda", unidade: "kg" },
+};
+
+/**
+ * Avalia se a variação de peso é favorável, estável ou desfavorável.
+ * Peso sozinho não tem uma direção "boa" universal — depende do objetivo do
+ * paciente (descer é bom em emagrecimento, subir é bom em ganho de massa).
+ * Exceção: quando o peso ficou praticamente parado (< 0.3kg, dentro da
+ * flutuação normal de balança) MAS a composição corporal melhorou (gordura
+ * caiu ou massa magra subiu), tratamos como recomposição corporal favorável
+ * independente do objetivo — é o cenário mais comum de "peso não mudou mas
+ * o resultado é bom" (ex: caso real testado nesta consulta: 96.0kg→96.0kg,
+ * só que trocando gordura por músculo).
+ */
+function avaliarTendenciaPeso(
+  deltaKg: number,
+  objetivo: ObjetivoNutricional,
+  composicaoMelhorou: boolean
+): { tendencia: EvolucaoMetrica["tendencia"]; interpretacao: string } {
+  const abs = Math.abs(deltaKg);
+
+  if (abs < 0.3) {
+    if (composicaoMelhorou) {
+      return {
+        tendencia: "favoravel",
+        interpretacao:
+          "Peso praticamente não mudou, mas isso é um bom sinal aqui: a composição corporal melhorou (mais " +
+          "músculo e/ou menos gordura) sem alterar o número da balança.",
+      };
+    }
+    return { tendencia: "estavel", interpretacao: "Peso praticamente estável desde a última avaliação." };
+  }
+
+  const subiu = deltaKg > 0;
+  const querSubir = objetivo === "ganho_massa" || objetivo === "performance_esportiva";
+  const querDescer = objetivo === "emagrecimento";
+
+  if ((querSubir && subiu) || (querDescer && !subiu)) {
+    return {
+      tendencia: "favoravel",
+      interpretacao: `Peso ${subiu ? "subiu" : "desceu"} ${abs}kg, na direção do seu objetivo atual.`,
+    };
+  }
+  if ((querSubir && !subiu) || (querDescer && subiu)) {
+    return {
+      tendencia: "desfavoravel",
+      interpretacao: `Peso ${subiu ? "subiu" : "desceu"} ${abs}kg, na direção contrária ao seu objetivo atual — vale conversar sobre isso na consulta.`,
+    };
+  }
+  return {
+    tendencia: "estavel",
+    interpretacao: `Peso ${subiu ? "subiu" : "desceu"} ${abs}kg desde a última avaliação.`,
+  };
+}
+
+/** Interpretação em linguagem natural pra gordura/massa magra/massa gorda —
+ *  separada de montarCartaoMetricaLaudo só por legibilidade. */
+function montarInterpretacaoMetricaLaudo(
+  chave: "gordura" | "massaMagra" | "massaGorda",
+  deltaAbsoluto: number,
+  tendencia: EvolucaoMetrica["tendencia"],
+  valorAnterior: number,
+  valorAtual: number,
+  genero: Genero
+): string {
+  const abs = Math.abs(deltaAbsoluto);
+
+  if (chave === "gordura") {
+    if (tendencia === "estavel") return "Percentual de gordura sem alteração desde a última avaliação.";
+    const classifAnterior = classificarPercentualGordura(valorAnterior, genero);
+    const classifAtual = classificarPercentualGordura(valorAtual, genero);
+    const mudouDeFaixa = classifAnterior !== classifAtual;
+    if (tendencia === "favoravel") {
+      return mudouDeFaixa
+        ? `Redução de ${abs} pontos percentuais — saiu de ${classifAnterior.toLowerCase()} para ${classifAtual.toLowerCase()}.`
+        : `Redução de ${abs} pontos percentuais no percentual de gordura.`;
+    }
+    return mudouDeFaixa
+      ? `Aumento de ${abs} pontos percentuais — saiu de ${classifAnterior.toLowerCase()} para ${classifAtual.toLowerCase()}, vale atenção.`
+      : `Aumento de ${abs} pontos percentuais no percentual de gordura — vale atenção.`;
+  }
+
+  if (chave === "massaMagra") {
+    if (tendencia === "estavel") return "Massa magra sem alteração desde a última avaliação.";
+    if (tendencia === "favoravel") {
+      return `Ganho de ${abs}kg de massa magra — é o resultado mais buscado numa recomposição corporal.`;
+    }
+    return `Perda de ${abs}kg de massa magra — vale investigar a causa (pode ser músculo, não só peso) na consulta.`;
+  }
+
+  // massaGorda
+  if (tendencia === "estavel") return "Massa gorda sem alteração desde a última avaliação.";
+  if (tendencia === "favoravel") return `Perda de ${abs}kg de gordura corporal.`;
+  return `Ganho de ${abs}kg de gordura corporal — vale atenção.`;
+}
+
+/** Monta um cartão de evolução pra uma métrica que vem do laudo de
+ *  avaliação física (gordura, massa magra ou massa gorda) — peso é tratado
+ *  à parte em avaliarTendenciaPeso porque sua direção "boa" depende do
+ *  objetivo do paciente, não é fixa como as outras três. */
+function montarCartaoMetricaLaudo(
+  chave: "gordura" | "massaMagra" | "massaGorda",
+  valorAnterior: number,
+  valorAtual: number,
+  direcaoBoa: "menor_melhor" | "maior_melhor",
+  genero: Genero
+): EvolucaoMetrica {
+  const deltaAbsoluto = arredondar(valorAtual - valorAnterior, 1);
+  const deltaPercentual = valorAnterior !== 0 ? arredondar((deltaAbsoluto / valorAnterior) * 100, 1) : null;
+
+  let tendencia: EvolucaoMetrica["tendencia"];
+  if (deltaAbsoluto === 0) tendencia = "estavel";
+  else if (direcaoBoa === "menor_melhor") tendencia = deltaAbsoluto < 0 ? "favoravel" : "desfavoravel";
+  else tendencia = deltaAbsoluto > 0 ? "favoravel" : "desfavoravel";
+
+  return {
+    chave,
+    ...ROTULOS_METRICA_EVOLUCAO[chave],
+    valorAnterior,
+    valorAtual,
+    deltaAbsoluto,
+    deltaPercentual,
+    tendencia,
+    interpretacao: montarInterpretacaoMetricaLaudo(chave, deltaAbsoluto, tendencia, valorAnterior, valorAtual, genero),
+  };
+}
+
+/**
+ * Monta os cartões comparativos entre a consulta anterior e a atual — peso,
+ * % de gordura, massa magra e massa gorda (pedido explícito da
+ * nutricionista: só essas 4 métricas, mostrando QUALQUER variação, por
+ * menor que seja, sem limiar de relevância).
+ *
+ * Peso vem sempre da própria consulta (peso_kg), nunca do documento de
+ * avaliação física — é o único dos 4 valores que toda consulta tem, então
+ * o cartão de peso aparece em toda consulta de retorno, mesmo quando o
+ * paciente não anexou avaliação física dessa vez ou da vez anterior. Os
+ * outros 3 só aparecem quando os dois documentos (atual e anterior)
+ * trouxerem aquele número especificamente — nunca inventado nem estimado.
+ *
+ * Retorna null quando não há peso anterior (1ª consulta, ou não achamos a
+ * consulta anterior) — nesse caso não existe "evolução" nenhuma pra mostrar.
+ */
+export function montarEvolucaoComposicaoCorporal(params: {
+  pesoAtualKg: number;
+  pesoAnteriorKg: number | null;
+  objetivo: ObjetivoNutricional;
+  avaliacaoFisicaAtual: AvaliacaoFisicaExtraida | null;
+  avaliacaoFisicaAnterior: AvaliacaoFisicaExtraida | null;
+  genero: Genero;
+}): EvolucaoMetrica[] | null {
+  const { pesoAtualKg, pesoAnteriorKg, objetivo, avaliacaoFisicaAtual, avaliacaoFisicaAnterior, genero } = params;
+
+  if (pesoAnteriorKg == null) return null;
+
+  const cartoes: EvolucaoMetrica[] = [];
+
+  const deltaPeso = arredondar(pesoAtualKg - pesoAnteriorKg, 1);
+  const gorduraCaiu =
+    avaliacaoFisicaAtual?.percentualGordura != null &&
+    avaliacaoFisicaAnterior?.percentualGordura != null &&
+    avaliacaoFisicaAtual.percentualGordura < avaliacaoFisicaAnterior.percentualGordura;
+  const massaMagraSubiu =
+    avaliacaoFisicaAtual?.massaMagraKg != null &&
+    avaliacaoFisicaAnterior?.massaMagraKg != null &&
+    avaliacaoFisicaAtual.massaMagraKg > avaliacaoFisicaAnterior.massaMagraKg;
+
+  cartoes.push({
+    chave: "peso",
+    ...ROTULOS_METRICA_EVOLUCAO.peso,
+    valorAnterior: pesoAnteriorKg,
+    valorAtual: pesoAtualKg,
+    deltaAbsoluto: deltaPeso,
+    deltaPercentual: pesoAnteriorKg !== 0 ? arredondar((deltaPeso / pesoAnteriorKg) * 100, 1) : null,
+    ...avaliarTendenciaPeso(deltaPeso, objetivo, Boolean(gorduraCaiu || massaMagraSubiu)),
+  });
+
+  if (avaliacaoFisicaAtual?.percentualGordura != null && avaliacaoFisicaAnterior?.percentualGordura != null) {
+    cartoes.push(
+      montarCartaoMetricaLaudo(
+        "gordura",
+        avaliacaoFisicaAnterior.percentualGordura,
+        avaliacaoFisicaAtual.percentualGordura,
+        "menor_melhor",
+        genero
+      )
+    );
+  }
+  if (avaliacaoFisicaAtual?.massaMagraKg != null && avaliacaoFisicaAnterior?.massaMagraKg != null) {
+    cartoes.push(
+      montarCartaoMetricaLaudo(
+        "massaMagra",
+        avaliacaoFisicaAnterior.massaMagraKg,
+        avaliacaoFisicaAtual.massaMagraKg,
+        "maior_melhor",
+        genero
+      )
+    );
+  }
+  if (avaliacaoFisicaAtual?.massaGordaKg != null && avaliacaoFisicaAnterior?.massaGordaKg != null) {
+    cartoes.push(
+      montarCartaoMetricaLaudo(
+        "massaGorda",
+        avaliacaoFisicaAnterior.massaGordaKg,
+        avaliacaoFisicaAtual.massaGordaKg,
+        "menor_melhor",
+        genero
+      )
+    );
+  }
+
+  return cartoes;
+}
+
 function montarRelatorioConsulta(params: {
   imc: number;
   classificacaoImc: string;
@@ -1833,6 +2051,20 @@ function montarRelatorioConsulta(params: {
    *  física ou nenhuma regra "manchete" disparou — nesses casos o Resumo
    *  Geral cai de volta pro texto padrão com rotação de variantes. */
   avaliacaoFisicaMancheteResumo?: string | null;
+  /** Peso desta consulta (kg) — usado no cartão de evolução de peso, junto
+   *  com pesoAnteriorKg. Vem sempre do formulário da consulta, nunca do
+   *  documento de avaliação física (que pode não trazer peso). */
+  pesoAtualKg: number;
+  /** Peso da consulta anterior (kg), quando existir — junto com
+   *  pesoAtualKg, habilita o cartão de evolução de peso (ver
+   *  montarEvolucaoComposicaoCorporal). Undefined/null numa 1ª consulta. */
+  pesoAnteriorKg?: number | null;
+  /** Dados extraídos da avaliação física da consulta ANTERIOR (mesmo
+   *  formato de avaliacaoFisicaDados, mas da consulta passada) — junto com
+   *  avaliacaoFisicaDados, habilita os cartões de evolução de gordura,
+   *  massa magra e massa gorda. Undefined/null quando não há avaliação
+   *  física anterior. */
+  avaliacaoFisicaAnteriorDados?: AvaliacaoFisicaExtraida | null;
 }): RelatorioConsulta {
   const numeroConsulta = params.numeroConsulta ?? 1;
 
@@ -1913,6 +2145,14 @@ function montarRelatorioConsulta(params: {
       params.genero,
       params.avaliacaoFisicaTextoMotor ?? null
     ),
+    evolucaoComposicaoCorporal: montarEvolucaoComposicaoCorporal({
+      pesoAtualKg: params.pesoAtualKg,
+      pesoAnteriorKg: params.pesoAnteriorKg ?? null,
+      objetivo: params.objetivo,
+      avaliacaoFisicaAtual: params.avaliacaoFisicaDados ?? null,
+      avaliacaoFisicaAnterior: params.avaliacaoFisicaAnteriorDados ?? null,
+      genero: params.genero,
+    }),
   };
 }
 
@@ -2060,226 +2300,4 @@ export function avaliarMudancaPesoNaoIntencional(
 export function gerarResultadoAvaliacao(
   dados: DadosAntropometricos & {
     nivelAtividade: NivelAtividade;
-    objetivo: ObjetivoNutricional;
-    condicoesSaude?: CondicaoSaude[];
-    qualidadeSono?: number | null;
-    nivelEstresse?: number | null;
-    restricoesAlimentares?: string[];
-    consumoAlcool?: ConsumoAlcool;
-    medicamentosEmUso?: string[];
-    condicoesSaudeOutras?: string | null;
-    tabagismo?: StatusTabagismo;
-    observacoesPaciente?: string | null;
-    pesoMetaKg?: number | null;
-    insonia?: boolean;
-    historicoCirurgias?: string | null;
-    perdaPesoNaoIntencional?: string | null;
-    ganhoPesoNaoIntencional?: string | null;
-    horasSono?: string | null;
-    ingestaoAguaCopos?: string | null;
-    dietaAnterior?: string | null;
-    historicoDietetico?: string | null;
-    doencasFamiliares?: string[];
-    rotinaTrabalho?: string | null;
-    mastigacao?: string | null;
-    frequenciaRestaurante?: string | null;
-    // Usados só pelo relatório em cartões (seção "o que você já faz bem") —
-    // não entram em nenhum cálculo, são só registro/contexto, igual aos
-    // outros campos da anamnese de 40 perguntas.
-    disposicaoManha?: string | null;
-    disposicaoTarde?: string | null;
-    disposicaoNoite?: string | null;
-    // Número sequencial da consulta do paciente (1ª, 2ª, 3ª...) — usado só
-    // pra rotacionar as variantes de texto do relatório e evitar repetição
-    // entre consultas. Opcional: se não vier, o relatório usa a 1ª variante
-    // de cada situação.
-    numeroConsulta?: number;
-    // Dados extraídos por IA da avaliação física anexada nessa consulta,
-    // quando houver (ver lib/nutrition/avaliacaoFisica.ts). Opcional/null
-    // quando não há anexo ou a extração falhou.
-    avaliacaoFisicaDados?: AvaliacaoFisicaExtraida | null;
-    // Texto de interpretação já pronto vindo do motor novo (lib/avaliacaoFisica/),
-    // calculado de forma assíncrona em route.ts antes desta chamada — ver
-    // comentário em montarRelatorioConsulta.
-    avaliacaoFisicaTextoMotor?: string | null;
-    // Manchete curta do mesmo motor, pra abertura do Resumo Geral — ver
-    // comentário em montarResumoGeral.
-    avaliacaoFisicaMancheteResumo?: string | null;
-  } & CondicaoEspecial
-): ResultadoAvaliacao {
-  const imc = calcularIMC(dados);
-  const classificacaoImc = classificarIMC(imc);
-  const { pesoMetaKg: pesoMetaSeguro, avisoMetaPeso } = avaliarSegurancaMetaPeso(
-    dados.pesoMetaKg,
-    dados.pesoKg,
-    classificacaoImc,
-    dados.historicoTranstornoAlimentar ?? false
-  );
-  const tmb = calcularTMB(dados);
-  const tdee = calcularTDEE(tmb, dados.nivelAtividade);
-  // Extraído pra variável própria (antes era só uma expressão inline) porque o
-  // relatório em cartões também precisa desse valor mais abaixo — mesma
-  // chamada de identificarCondicaoClinicaComplexa, sem mudar o que ela faz.
-  const condicaoClinicaComplexa = identificarCondicaoClinicaComplexa(
-    [dados.condicoesSaudeOutras, dados.historicoCirurgias].filter(Boolean).join(" ")
-  );
-  const { valor: metaCalorica, avisoSeguranca } = calcularMetaCalorica(tdee, dados.objetivo, dados.genero, {
-    gestante: dados.gestante,
-    lactante: dados.lactante,
-    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
-    imcAbaixoDoPesoComObjetivoEmagrecimento: imc < 18.5 && dados.objetivo === "emagrecimento",
-    condicaoClinicaComplexa,
-  });
-
-  const { avisos: avisosCondicoes, limiteProteinaPorKg } = avaliarCondicoesSaude(dados.condicoesSaude ?? []);
-  const macros = calcularMacros(metaCalorica, dados.pesoKg, dados.objetivo, limiteProteinaPorKg);
-  const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade, {
-    gestante: dados.gestante,
-    lactante: dados.lactante,
-  });
-  const avisosSono = avaliarSonoEEstresse(dados.qualidadeSono ?? null, dados.nivelEstresse ?? null, dados.insonia ?? false);
-  const avisosDieta = avaliarDietaRestritiva(dados.restricoesAlimentares ?? []);
-  const avisosObjetivoRisco = avaliarObjetivoVsRiscoCardiometabolico(imc, dados.objetivo, dados.condicoesSaude ?? [], {
-    gestante: dados.gestante,
-    lactante: dados.lactante,
-    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
-  });
-  const avisosAlcool = avaliarConsumoAlcool(
-    dados.consumoAlcool ?? "nunca",
-    dados.condicoesSaude ?? [],
-    dados.gestante ?? false,
-    dados.lactante ?? false
-  );
-  const avisosGestacaoCondicao = avaliarGestacaoComCondicao(
-    dados.gestante ?? false,
-    dados.lactante ?? false,
-    dados.condicoesSaude ?? []
-  );
-  const avisosMedicamentos = avaliarMedicamentos(dados.medicamentosEmUso ?? []);
-  const avisosTabagismo = avaliarTabagismo(dados.tabagismo ?? "nunca", dados.condicoesSaude ?? []);
-  const avisosMudancaPeso = avaliarMudancaPesoNaoIntencional(dados.perdaPesoNaoIntencional, dados.ganhoPesoNaoIntencional);
-
-  // Novos cruzamentos (campos antes coletados e nunca usados) — ver
-  // pesquisa/plano compartilhado com a nutricionista antes de implementar.
-  const avisosAlcoolReducaoDeDanos = avaliarAlcoolReducaoDeDanos(dados.consumoAlcool ?? "nunca", dados.objetivo);
-  const avisosAtividade = avaliarAtividadeVsObjetivo(dados.nivelAtividade, dados.objetivo);
-  const avisosSonoDuracao = avaliarSonoDuracao(dados.horasSono);
-  const avisosHidratacao = avaliarHidratacaoReal(dados.ingestaoAguaCopos, aguaMl);
-  const avisosHistoricoDietas = avaliarHistoricoDietas(dados.dietaAnterior);
-  const avisosRiscoFamiliar = avaliarRiscoFamiliar(dados.doencasFamiliares ?? [], dados.condicoesSaude ?? [], classificacaoImc);
-  const avisosRotinaTrabalho = avaliarRotinaTrabalho(dados.rotinaTrabalho);
-  const avisosMastigacao = avaliarMastigacao(dados.mastigacao);
-  const avisosFrequenciaRestaurante = avaliarFrequenciaRestaurante(dados.frequenciaRestaurante);
-
-  const avisos = [
-    avisoMetaPeso,
-    avisoSeguranca,
-    ...avisosMudancaPeso,
-    ...avisosGestacaoCondicao,
-    ...avisosCondicoes,
-    ...avisosRiscoFamiliar,
-    ...avisosAlcool,
-    ...avisosAlcoolReducaoDeDanos,
-    ...avisosTabagismo,
-    ...avisosSono,
-    ...avisosSonoDuracao,
-    ...avisosAtividade,
-    ...avisosRotinaTrabalho,
-    ...avisosHidratacao,
-    ...avisosDieta,
-    ...avisosObjetivoRisco,
-    ...avisosMedicamentos,
-    ...avisosHistoricoDietas,
-    ...avisosMastigacao,
-    ...avisosFrequenciaRestaurante,
-  ].filter((a): a is string => Boolean(a));
-
-  const resumo = montarResumoConsulta({
-    imc,
-    classificacaoImc,
-    metaCalorica,
-    objetivo: dados.objetivo,
-    avisoSeguranca,
-    avisoMetaPeso,
-    avisosMudancaPeso,
-    avisosCondicoes,
-    avisosGestacaoCondicao,
-    avisosObjetivoRisco,
-    avisosAlcool,
-    avisosAlcoolReducaoDeDanos,
-    avisosTabagismo,
-    avisosSono,
-    avisosSonoDuracao,
-    avisosDieta,
-    avisosMedicamentos,
-    avisosAtividade,
-    avisosHidratacao,
-    avisosHistoricoDietas,
-    avisosRiscoFamiliar,
-    avisosRotinaTrabalho,
-    avisosMastigacao,
-    avisosFrequenciaRestaurante,
-    observacoesPaciente: dados.observacoesPaciente,
-  });
-
-  const relatorio = montarRelatorioConsulta({
-    imc,
-    classificacaoImc,
-    tmb,
-    tdee,
-    metaCalorica,
-    objetivo: dados.objetivo,
-    avisoSeguranca,
-    avisoMetaPeso,
-    condicoesSaude: dados.condicoesSaude ?? [],
-    gestante: dados.gestante ?? false,
-    lactante: dados.lactante ?? false,
-    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar ?? false,
-    condicaoClinicaComplexa,
-    perdaPesoNaoIntencional: dados.perdaPesoNaoIntencional,
-    ganhoPesoNaoIntencional: dados.ganhoPesoNaoIntencional,
-    nivelAtividade: dados.nivelAtividade,
-    ingestaoAguaCopos: dados.ingestaoAguaCopos,
-    aguaMl,
-    horasSono: dados.horasSono,
-    qualidadeSono: dados.qualidadeSono ?? null,
-    insonia: dados.insonia ?? false,
-    nivelEstresse: dados.nivelEstresse ?? null,
-    consumoAlcool: dados.consumoAlcool ?? "nunca",
-    tabagismo: dados.tabagismo ?? "nunca",
-    frequenciaRestaurante: dados.frequenciaRestaurante,
-    mastigacao: dados.mastigacao,
-    rotinaTrabalho: dados.rotinaTrabalho,
-    disposicaoManha: dados.disposicaoManha,
-    disposicaoTarde: dados.disposicaoTarde,
-    disposicaoNoite: dados.disposicaoNoite,
-    restricoesAlimentares: dados.restricoesAlimentares ?? [],
-    historicoDietetico: dados.historicoDietetico,
-    dietaAnterior: dados.dietaAnterior,
-    numeroConsulta: dados.numeroConsulta,
-    genero: dados.genero,
-    avaliacaoFisicaDados: dados.avaliacaoFisicaDados,
-    avaliacaoFisicaTextoMotor: dados.avaliacaoFisicaTextoMotor,
-    avaliacaoFisicaMancheteResumo: dados.avaliacaoFisicaMancheteResumo,
-  });
-
-  return {
-    imc,
-    classificacaoImc,
-    tmb,
-    tdee,
-    metaCalorica,
-    macros,
-    aguaMl,
-    avisos,
-    resumo,
-    pesoMetaKg: pesoMetaSeguro,
-    avisoMetaPeso,
-    relatorio,
-  };
-}
-
-function arredondar(valor: number, casas: number): number {
-  const fator = 10 ** casas;
-  return Math.round(valor * fator) / fator;
-}
+    objet

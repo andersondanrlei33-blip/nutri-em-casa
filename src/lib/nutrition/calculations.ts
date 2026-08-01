@@ -792,22 +792,30 @@ export function avaliarGestacaoComCondicao(
  * quando as duas medidas estão disponíveis. Referências de corte (OMS):
  * mulher ≥0.85 e homem ≥0.90 já indicam risco aumentado.
  */
+/** Classifica um valor de RCQ já calculado (ex: vindo pronto de um laudo de
+ *  bioimpedância, campo relacaoCinturaQuadril) — separado de calcularRCQ pra
+ *  permitir classificar um valor que já veio pronto do aparelho, sem
+ *  precisar refazer a divisão cintura/quadril (ver
+ *  components/evolucao/CardRCQ.tsx). */
+export function classificarRCQ(valor: number, genero: Genero): string {
+  if (genero === "masculino") {
+    return valor >= 0.9 ? "Risco aumentado" : "Risco baixo";
+  }
+  if (genero === "feminino") {
+    return valor >= 0.85 ? "Risco aumentado" : "Risco baixo";
+  }
+  // Sem um corte padronizado para "outro" — mostramos o número com um corte
+  // conservador (média dos dois) em vez de inventar uma referência específica.
+  return valor >= 0.875 ? "Risco possivelmente aumentado" : "Risco baixo";
+}
+
 export function calcularRCQ(
   cinturaCm: number,
   quadrilCm: number,
   genero: Genero
 ): { valor: number; classificacao: string } {
   const valor = arredondar(cinturaCm / quadrilCm, 2);
-
-  if (genero === "masculino") {
-    return { valor, classificacao: valor >= 0.9 ? "Risco aumentado" : "Risco baixo" };
-  }
-  if (genero === "feminino") {
-    return { valor, classificacao: valor >= 0.85 ? "Risco aumentado" : "Risco baixo" };
-  }
-  // Sem um corte padronizado para "outro" — mostramos o número com um corte
-  // conservador (média dos dois) em vez de inventar uma referência específica.
-  return { valor, classificacao: valor >= 0.875 ? "Risco possivelmente aumentado" : "Risco baixo" };
+  return { valor, classificacao: classificarRCQ(valor, genero) };
 }
 
 export interface MetaPesoResultado {

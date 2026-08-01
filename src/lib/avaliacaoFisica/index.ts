@@ -30,10 +30,13 @@ export async function gerarConsultaDeAvaliacaoFisica(
   dados: AvaliacaoFisicaNormalizada,
   perfil: PerfilPaciente,
   biblioteca: BibliotecaClinica,
-  avaliacaoAnterior: AvaliacaoFisicaNormalizada | null = null
+  avaliacaoAnterior: AvaliacaoFisicaNormalizada | null = null,
+  /** Número sequencial da consulta do paciente — ver comentário em
+   *  bibliotecaSelector.ts::escolherRotativo. Assume 1 se não informado. */
+  numeroConsulta: number = 1
 ): Promise<{ texto: string; insightsDetectados: string[] }> {
   const insights = processarAvaliacao(dados, perfil, avaliacaoAnterior);
-  const texto = await montarConsultaAvaliacaoFisica(insights, dados, perfil, biblioteca);
+  const texto = await montarConsultaAvaliacaoFisica(insights, dados, perfil, biblioteca, numeroConsulta);
   return {
     texto,
     insightsDetectados: insights.map((i) => i.codigoRegra),

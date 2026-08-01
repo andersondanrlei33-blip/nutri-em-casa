@@ -29,6 +29,7 @@ export const r1ImcMascaradoPorMusculo: Regra = (dados) => {
       codigoRegra: "R1",
       prioridade: 1,
       codigoBibliotecaSugerido: "AVALFISICA-IMC-MASCARADO-MUSCULO",
+      usoNoResumo: true, // manchete — reescreve a frase de abertura do Resumo Geral (Seção 5.4)
       variaveis: {
         imc: dados.obesidade.imc.valor,
         pgc: dados.obesidade.percentualGordura.valor,
@@ -60,6 +61,7 @@ export const r2GorduraConcentradaTronco: Regra = (dados) => {
     prioridade: 2,
     codigoBibliotecaSugerido: "AVALFISICA-GORDURA-CONCENTRADA-TRONCO",
     tagTematica: "gordura_abdominal",
+    usoNoResumo: false, // detalhe — só aparece no card de Composição Corporal
     variaveis: { gorduraTroncoPct: troncoPct },
   };
 };
@@ -75,6 +77,7 @@ export const r3RelacaoCinturaQuadrilElevada: Regra = (dados) => {
     prioridade: 2,
     codigoBibliotecaSugerido: "AVALFISICA-GORDURA-CONCENTRADA-TRONCO",
     tagTematica: "gordura_abdominal",
+    usoNoResumo: false,
     variaveis: { rcq: rcq.valor, rcqRefMax: rcq.refMax },
   };
 };
@@ -93,6 +96,7 @@ export const r4GorduraVisceralAtencao: Regra = (dados) => {
     codigoRegra: "R4",
     prioridade: 2,
     codigoBibliotecaSugerido: "AVALFISICA-GORDURA-VISCERAL-ATENCAO",
+    usoNoResumo: false,
     variaveis: { nivelGorduraVisceral: nivel.valor, refMax },
   };
 };
@@ -107,6 +111,7 @@ export const r5MassaMuscularAbaixoHipertrofia: Regra = (dados, perfil) => {
     codigoRegra: "R5",
     prioridade: 1,
     codigoBibliotecaSugerido: "AVALFISICA-MASSA-MUSCULAR-ABAIXO-HIPERTROFIA",
+    usoNoResumo: false,
     variaveis: { massaMuscularKg: dados.musculoGordura.massaMuscularEsqueleticaKg.valor },
   };
 };
@@ -120,6 +125,7 @@ export const r6PercentualGorduraAcimaEmagrecimento: Regra = (dados, perfil) => {
     codigoRegra: "R6",
     prioridade: 1,
     codigoBibliotecaSugerido: "AVALFISICA-PERCENTUAL-GORDURA-ACIMA-EMAGRECIMENTO",
+    usoNoResumo: true,
     variaveis: { pgc: dados.obesidade.percentualGordura.valor },
   };
 };
@@ -134,6 +140,7 @@ export const r7RecomposicaoFavoravel: Regra = (dados, perfil) => {
     codigoRegra: "R7",
     prioridade: 1,
     codigoBibliotecaSugerido: "AVALFISICA-RECOMPOSICAO-FAVORAVEL",
+    usoNoResumo: true,
     variaveis: {},
   };
 };
@@ -148,6 +155,7 @@ export const r8PontuacaoGeralAlta: Regra = (dados) => {
     codigoRegra: "R8",
     prioridade: 3,
     codigoBibliotecaSugerido: "ELOGIO", // sinaliza pro montador puxar do Módulo 16, não uma categoria de cenário
+    usoNoResumo: false,
     variaveis: { pontuacao: p.valor, max: p.max },
   };
 };
@@ -173,6 +181,7 @@ export const r9AssimetriaMuscular: Regra = (dados) => {
     codigoRegra: "R9",
     prioridade: 3,
     codigoBibliotecaSugerido: "AVALFISICA-ASSIMETRIA-MUSCULAR",
+    usoNoResumo: false,
     variaveis: { diffBraco: diffBraco ?? undefined, diffPerna: diffPerna ?? undefined },
   };
 };
@@ -190,6 +199,7 @@ export const r10PesoIdealNaoEAMeta: Regra = (dados, perfil) => {
     codigoRegra: "R10",
     prioridade: 2,
     codigoBibliotecaSugerido: "AVALFISICA-PESO-IDEAL-NAO-E-A-META",
+    usoNoResumo: true,
     variaveis: { pesoAtual, pesoIdeal },
   };
 };
@@ -222,6 +232,7 @@ export const r12EvolucaoEmRelacaoAAnterior: Regra = (dados, _perfil, anterior) =
     prioridade: 1,
     // dash, não underscore, pra bater com a convenção de código dos outros módulos
     codigoBibliotecaSugerido: `AVALFISICA-EVOLUCAO-${tendencia.toUpperCase().replace(/_/g, "-")}`,
+    usoNoResumo: true,
     variaveis: { deltaPgc, deltaMusculo, tendencia },
   };
 };

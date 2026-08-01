@@ -132,6 +132,31 @@ export interface ComposicaoCorporalResultado {
   classificacaoPercentualGordura: string;
   textoComparativo: string | null;
 }
+/** Direção da variação de uma métrica entre a consulta anterior e a atual —
+ *  ver EvolucaoMetrica. Sempre relativa ao que é clinicamente desejável para
+ *  aquela métrica especificamente (ex: gordura corporal caindo = favoravel;
+ *  peso é avaliado contra o objetivo do paciente — ver
+ *  lib/nutrition/calculations.ts::montarEvolucaoComposicaoCorporal). */
+export type TendenciaEvolucaoMetrica = "favoravel" | "estavel" | "desfavoravel";
+/** Um cartão comparativo entre o valor de uma métrica (peso, % de gordura,
+ *  massa magra ou massa gorda) na consulta anterior e na consulta atual —
+ *  ver lib/nutrition/calculations.ts::montarEvolucaoComposicaoCorporal.
+ *  Mostra QUALQUER variação, por menor que seja (sem limiar de relevância —
+ *  decisão explícita da nutricionista). */
+export interface EvolucaoMetrica {
+  chave: "peso" | "gordura" | "massaMagra" | "massaGorda";
+  rotulo: string;
+  unidade: string;
+  valorAnterior: number;
+  valorAtual: number;
+  deltaAbsoluto: number;
+  /** Null quando o valor anterior é 0 (variação percentual não faz sentido). */
+  deltaPercentual: number | null;
+  tendencia: TendenciaEvolucaoMetrica;
+  /** Frase curta em linguagem natural explicando o significado clínico
+   *  dessa variação — pronta pra exibição, sem processamento adicional. */
+  interpretacao: string;
+}
 /** Relatório da consulta em blocos, gerado por
  *  lib/nutrition/calculations.ts::montarRelatorioConsulta e salvo em
  *  avaliacoes_nutricionais.relatorio (jsonb). Usado pela tela de resultado
@@ -155,6 +180,12 @@ export interface RelatorioConsulta {
    *  gordura legível na consulta atual — null nos demais casos (inclusive
    *  em relatórios de consultas anteriores a essa coluna). */
   composicaoCorporal: ComposicaoCorporalResultado | null;
+  /** Cartões comparativos entre a consulta anterior e a atual — peso, % de
+   *  gordura, massa magra e massa gorda, cada um só quando os dois valores
+   *  (anterior e atual) estiverem disponíveis. Null quando não é consulta
+   *  de retorno, ou quando nenhuma das 4 métricas tem os dois valores. Ver
+   *  lib/nutrition/calculations.ts::montarEvolucaoComposicaoCorporal. */
+  evolucaoComposicaoCorporal: EvolucaoMetrica[] | null;
 }
 export interface Perfil {
   id: string;

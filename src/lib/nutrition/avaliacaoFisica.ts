@@ -199,7 +199,13 @@ export async function extrairAvaliacaoFisica(
   try {
     const resposta = await anthropic.messages.create({
       model: NUTRI_MODEL_VISAO,
-      max_tokens: 2000,
+      // Schema exigido é grande (segmentar tem até 10 sub-campos, mais
+      // dobrasCutaneasMm/circunferenciasCm, mais resumoTexto) — um limite
+      // baixo aqui corta a resposta da IA no meio da estrutura, o que quebra
+      // a montagem do JSON internamente no SDK (erro real visto em
+      // produção com max_tokens: 2000: "SyntaxError: Expected ',' or '}'").
+      // Margem generosa pra nunca mais cortar no meio.
+      max_tokens: 4096,
       tools: [FERRAMENTA_EXTRACAO_AVALIACAO_FISICA],
       tool_choice: { type: "tool", name: "registrar_avaliacao_fisica" },
       messages: [
@@ -212,6 +218,18 @@ export async function extrairAvaliacaoFisica(
         },
       ],
     });
+
+    // Se a resposta foi cortada por falta de espaço, o bloco de tool_use
+    // pode vir com um JSON incompleto (e o SDK pode falhar ao montar
+    // `input` a partir disso) — melhor detectar isso explicitamente aqui,
+    // com uma mensagem clara no log, do que deixar estourar como um erro
+    // genérico de JSON mais abaixo.
+    if ((resposta as { stop_reason?: string }).stop_reason === "max_tokens") {
+      console.error(
+        "Falha ao extrair avaliação física: resposta da IA cortada por max_tokens — aumentar o limite."
+      );
+      return null;
+    }
 
     const blocoFerramenta = resposta.content.find((bloco) => bloco.type === "tool_use") as
       | { type: "tool_use"; input: unknown }

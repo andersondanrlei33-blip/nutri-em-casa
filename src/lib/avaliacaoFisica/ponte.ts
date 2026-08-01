@@ -241,7 +241,12 @@ export async function gerarInterpretacoesAvaliacaoFisica(
     objetivo: ObjetivoNutricional;
     nivelAtividade: NivelAtividade;
     condicoesSaude: CondicaoSaude[];
-  }
+  },
+  /** Número sequencial da consulta do paciente (1ª, 2ª, 3ª...) — repassado
+   *  pra biblioteca pra rotacionar as variantes em vez de sortear ao acaso
+   *  (ver bibliotecaSelector.ts::escolherRotativo). Se não vier informado,
+   *  assume 1 (sempre a primeira variante de cada categoria). */
+  numeroConsulta: number = 1
 ): Promise<InterpretacoesAvaliacaoFisica> {
   if (!dados || dados.percentualGordura == null) return { textoCard: null, mancheteResumo: null };
 
@@ -258,7 +263,7 @@ export async function gerarInterpretacoesAvaliacaoFisica(
     const biblioteca = new BibliotecaClinicaReal();
     const insights = processarAvaliacao(normalizado, perfil, null);
 
-    const textoCard = await montarConsultaAvaliacaoFisica(insights, normalizado, perfil, biblioteca);
+    const textoCard = await montarConsultaAvaliacaoFisica(insights, normalizado, perfil, biblioteca, numeroConsulta);
 
     const manchete = insights.find((i) => i.usoNoResumo);
     const mancheteResumo = manchete
@@ -266,6 +271,7 @@ export async function gerarInterpretacoesAvaliacaoFisica(
           codigoCategoria: manchete.codigoBibliotecaSugerido,
           pacienteId: perfilParams.usuarioId,
           formato: "curto",
+          numeroConsulta,
         })
       : null;
 

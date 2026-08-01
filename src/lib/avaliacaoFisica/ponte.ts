@@ -15,7 +15,7 @@ import type { AvaliacaoFisicaExtraida, Genero, NivelAtividade, ObjetivoNutricion
 import { classificarPercentualGordura } from "@/lib/nutrition/avaliacaoFisica";
 import { processarAvaliacao } from "./motor";
 import { montarConsultaAvaliacaoFisica } from "./montarConsulta";
-import { BibliotecaClinicaMock } from "./bibliotecaSelector";
+import { BibliotecaClinicaReal } from "./bibliotecaSelector";
 import { classificarImcDetalhado } from "./util";
 import type { AvaliacaoFisicaNormalizada, Categoria, Objetivo, PerfilPaciente } from "./types";
 // Nota: importa direto de ./motor, ./montarConsulta e ./util (não de
@@ -255,7 +255,7 @@ export async function gerarInterpretacoesAvaliacaoFisica(
       nivelAtividade: perfilParams.nivelAtividade,
       condicoesSaude: perfilParams.condicoesSaude,
     });
-    const biblioteca = new BibliotecaClinicaMock();
+    const biblioteca = new BibliotecaClinicaReal();
     const insights = processarAvaliacao(normalizado, perfil, null);
 
     const textoCard = await montarConsultaAvaliacaoFisica(insights, normalizado, perfil, biblioteca);

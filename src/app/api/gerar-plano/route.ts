@@ -326,6 +326,12 @@ export async function POST(request: Request) {
     avaliacaoFisicaDados,
     avaliacaoFisicaTextoMotor,
     avaliacaoFisicaMancheteResumo,
+    // Peso e avaliação física da consulta anterior (buscados acima, mesmo
+    // objeto já usado pela regra de evolução R12 do motor de interpretação)
+    // — habilitam os cartões de evolução (peso, gordura, massa magra, massa
+    // gorda) no relatório desta consulta.
+    pesoAnteriorKg: avaliacaoFisicaAnterior?.conhecidos.pesoKg ?? null,
+    avaliacaoFisicaAnteriorDados: avaliacaoFisicaAnterior?.dados ?? null,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase

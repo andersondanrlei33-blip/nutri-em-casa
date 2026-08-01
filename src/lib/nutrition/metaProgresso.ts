@@ -54,3 +54,38 @@ export function estimarProgressoMeta({
 
   return { faltamKg, precisaPerder, direcaoCorreta, semanasEstimadas, ritmoSemanalKg, ritmoSeguro };
 }
+
+/**
+ * Compara a média de peso dos últimos 7 dias com a média dos 7 dias
+ * anteriores a esses. É uma vitória de curto prazo — diferente da
+ * comparação "desde o início", que nas primeiras semanas pode parecer
+ * distante demais pra ser motivadora. Retorna null se não houver pelo menos
+ * um registro em cada uma das duas janelas.
+ */
+export function compararUltimasDuasSemanas(
+  pesos: { data: string; peso_kg: number }[],
+  referencia = new Date()
+): { mediaAtual: number; mediaAnterior: number; deltaKg: number } | null {
+  const umDiaMs = 24 * 60 * 60 * 1000;
+  const fimJanelaAtual = referencia.getTime();
+  const inicioJanelaAtual = fimJanelaAtual - 7 * umDiaMs;
+  const inicioJanelaAnterior = fimJanelaAtual - 14 * umDiaMs;
+
+  const janelaAtual = pesos.filter((p) => {
+    const t = new Date(p.data).getTime();
+    return t > inicioJanelaAtual && t <= fimJanelaAtual;
+  });
+  const janelaAnterior = pesos.filter((p) => {
+    const t = new Date(p.data).getTime();
+    return t > inicioJanelaAnterior && t <= inicioJanelaAtual;
+  });
+
+  if (janelaAtual.length === 0 || janelaAnterior.length === 0) return null;
+
+  const media = (lista: { peso_kg: number }[]) => lista.reduce((s, p) => s + p.peso_kg, 0) / lista.length;
+  const mediaAtual = Math.round(media(janelaAtual) * 10) / 10;
+  const mediaAnterior = Math.round(media(janelaAnterior) * 10) / 10;
+  const deltaKg = Math.round((mediaAtual - mediaAnterior) * 10) / 10;
+
+  return { mediaAtual, mediaAnterior, deltaKg };
+}

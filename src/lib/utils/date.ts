@@ -68,6 +68,12 @@ export function semanaAtual(referencia = new Date()) {
   return DIAS_SEMANA.map((dia, i) => ({ dia, data: addDays(inicio, i) }));
 }
 
+/** Dia da semana de hoje, no mesmo formato usado em dia_semana (segunda..domingo). */
+export function diaSemanaHoje() {
+  const indiceDiaJs = new Date().getDay(); // 0 = domingo
+  return DIAS_SEMANA[(indiceDiaJs + 6) % 7];
+}
+
 /**
  * Sequência atual de dias consecutivos com pelo menos um registro (peso,
  * água, sono, humor, exercício ou medidas — qualquer um conta como "usei o

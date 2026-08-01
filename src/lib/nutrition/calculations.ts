@@ -863,7 +863,7 @@ export function avaliarSegurancaMetaPeso(
 
 export interface ResultadoAvaliacao {
   imc: number;
-  classificacaoImc: number;
+  classificacaoImc: string;
   tmb: number;
   tdee: number;
   metaCalorica: number;
@@ -2300,4 +2300,236 @@ export function avaliarMudancaPesoNaoIntencional(
 export function gerarResultadoAvaliacao(
   dados: DadosAntropometricos & {
     nivelAtividade: NivelAtividade;
-    objet
+    objetivo: ObjetivoNutricional;
+    condicoesSaude?: CondicaoSaude[];
+    qualidadeSono?: number | null;
+    nivelEstresse?: number | null;
+    restricoesAlimentares?: string[];
+    consumoAlcool?: ConsumoAlcool;
+    medicamentosEmUso?: string[];
+    condicoesSaudeOutras?: string | null;
+    tabagismo?: StatusTabagismo;
+    observacoesPaciente?: string | null;
+    pesoMetaKg?: number | null;
+    insonia?: boolean;
+    historicoCirurgias?: string | null;
+    perdaPesoNaoIntencional?: string | null;
+    ganhoPesoNaoIntencional?: string | null;
+    horasSono?: string | null;
+    ingestaoAguaCopos?: string | null;
+    dietaAnterior?: string | null;
+    historicoDietetico?: string | null;
+    doencasFamiliares?: string[];
+    rotinaTrabalho?: string | null;
+    mastigacao?: string | null;
+    frequenciaRestaurante?: string | null;
+    // Usados só pelo relatório em cartões (seção "o que você já faz bem") —
+    // não entram em nenhum cálculo, são só registro/contexto, igual aos
+    // outros campos da anamnese de 40 perguntas.
+    disposicaoManha?: string | null;
+    disposicaoTarde?: string | null;
+    disposicaoNoite?: string | null;
+    // Número sequencial da consulta do paciente (1ª, 2ª, 3ª...) — usado só
+    // pra rotacionar as variantes de texto do relatório e evitar repetição
+    // entre consultas. Opcional: se não vier, o relatório usa a 1ª variante
+    // de cada situação.
+    numeroConsulta?: number;
+    // Dados extraídos por IA da avaliação física anexada nessa consulta,
+    // quando houver (ver lib/nutrition/avaliacaoFisica.ts). Opcional/null
+    // quando não há anexo ou a extração falhou.
+    avaliacaoFisicaDados?: AvaliacaoFisicaExtraida | null;
+    // Texto de interpretação já pronto vindo do motor novo (lib/avaliacaoFisica/),
+    // calculado de forma assíncrona em route.ts antes desta chamada — ver
+    // comentário em montarRelatorioConsulta.
+    avaliacaoFisicaTextoMotor?: string | null;
+    // Manchete curta do mesmo motor, pra abertura do Resumo Geral — ver
+    // comentário em montarResumoGeral.
+    avaliacaoFisicaMancheteResumo?: string | null;
+    // Peso da consulta anterior (kg) e dados da avaliação física da consulta
+    // anterior — junto com peso_kg/avaliacaoFisicaDados desta consulta,
+    // habilitam os cartões de evolução (peso, gordura, massa magra, massa
+    // gorda) na tela de resultado e no Histórico. Undefined/null numa 1ª
+    // consulta ou quando não achamos a consulta anterior (route.ts).
+    pesoAnteriorKg?: number | null;
+    avaliacaoFisicaAnteriorDados?: AvaliacaoFisicaExtraida | null;
+  } & CondicaoEspecial
+): ResultadoAvaliacao {
+  const imc = calcularIMC(dados);
+  const classificacaoImc = classificarIMC(imc);
+  const { pesoMetaKg: pesoMetaSeguro, avisoMetaPeso } = avaliarSegurancaMetaPeso(
+    dados.pesoMetaKg,
+    dados.pesoKg,
+    classificacaoImc,
+    dados.historicoTranstornoAlimentar ?? false
+  );
+  const tmb = calcularTMB(dados);
+  const tdee = calcularTDEE(tmb, dados.nivelAtividade);
+  // Extraído pra variável própria (antes era só uma expressão inline) porque o
+  // relatório em cartões também precisa desse valor mais abaixo — mesma
+  // chamada de identificarCondicaoClinicaComplexa, sem mudar o que ela faz.
+  const condicaoClinicaComplexa = identificarCondicaoClinicaComplexa(
+    [dados.condicoesSaudeOutras, dados.historicoCirurgias].filter(Boolean).join(" ")
+  );
+  const { valor: metaCalorica, avisoSeguranca } = calcularMetaCalorica(tdee, dados.objetivo, dados.genero, {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
+    imcAbaixoDoPesoComObjetivoEmagrecimento: imc < 18.5 && dados.objetivo === "emagrecimento",
+    condicaoClinicaComplexa,
+  });
+
+  const { avisos: avisosCondicoes, limiteProteinaPorKg } = avaliarCondicoesSaude(dados.condicoesSaude ?? []);
+  const macros = calcularMacros(metaCalorica, dados.pesoKg, dados.objetivo, limiteProteinaPorKg);
+  const aguaMl = calcularAguaRecomendada(dados.pesoKg, dados.nivelAtividade, {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+  });
+  const avisosSono = avaliarSonoEEstresse(dados.qualidadeSono ?? null, dados.nivelEstresse ?? null, dados.insonia ?? false);
+  const avisosDieta = avaliarDietaRestritiva(dados.restricoesAlimentares ?? []);
+  const avisosObjetivoRisco = avaliarObjetivoVsRiscoCardiometabolico(imc, dados.objetivo, dados.condicoesSaude ?? [], {
+    gestante: dados.gestante,
+    lactante: dados.lactante,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar,
+  });
+  const avisosAlcool = avaliarConsumoAlcool(
+    dados.consumoAlcool ?? "nunca",
+    dados.condicoesSaude ?? [],
+    dados.gestante ?? false,
+    dados.lactante ?? false
+  );
+  const avisosGestacaoCondicao = avaliarGestacaoComCondicao(
+    dados.gestante ?? false,
+    dados.lactante ?? false,
+    dados.condicoesSaude ?? []
+  );
+  const avisosMedicamentos = avaliarMedicamentos(dados.medicamentosEmUso ?? []);
+  const avisosTabagismo = avaliarTabagismo(dados.tabagismo ?? "nunca", dados.condicoesSaude ?? []);
+  const avisosMudancaPeso = avaliarMudancaPesoNaoIntencional(dados.perdaPesoNaoIntencional, dados.ganhoPesoNaoIntencional);
+
+  // Novos cruzamentos (campos antes coletados e nunca usados) — ver
+  // pesquisa/plano compartilhado com a nutricionista antes de implementar.
+  const avisosAlcoolReducaoDeDanos = avaliarAlcoolReducaoDeDanos(dados.consumoAlcool ?? "nunca", dados.objetivo);
+  const avisosAtividade = avaliarAtividadeVsObjetivo(dados.nivelAtividade, dados.objetivo);
+  const avisosSonoDuracao = avaliarSonoDuracao(dados.horasSono);
+  const avisosHidratacao = avaliarHidratacaoReal(dados.ingestaoAguaCopos, aguaMl);
+  const avisosHistoricoDietas = avaliarHistoricoDietas(dados.dietaAnterior);
+  const avisosRiscoFamiliar = avaliarRiscoFamiliar(dados.doencasFamiliares ?? [], dados.condicoesSaude ?? [], classificacaoImc);
+  const avisosRotinaTrabalho = avaliarRotinaTrabalho(dados.rotinaTrabalho);
+  const avisosMastigacao = avaliarMastigacao(dados.mastigacao);
+  const avisosFrequenciaRestaurante = avaliarFrequenciaRestaurante(dados.frequenciaRestaurante);
+
+  const avisos = [
+    avisoMetaPeso,
+    avisoSeguranca,
+    ...avisosMudancaPeso,
+    ...avisosGestacaoCondicao,
+    ...avisosCondicoes,
+    ...avisosRiscoFamiliar,
+    ...avisosAlcool,
+    ...avisosAlcoolReducaoDeDanos,
+    ...avisosTabagismo,
+    ...avisosSono,
+    ...avisosSonoDuracao,
+    ...avisosAtividade,
+    ...avisosRotinaTrabalho,
+    ...avisosHidratacao,
+    ...avisosDieta,
+    ...avisosObjetivoRisco,
+    ...avisosMedicamentos,
+    ...avisosHistoricoDietas,
+    ...avisosMastigacao,
+    ...avisosFrequenciaRestaurante,
+  ].filter((a): a is string => Boolean(a));
+
+  const resumo = montarResumoConsulta({
+    imc,
+    classificacaoImc,
+    metaCalorica,
+    objetivo: dados.objetivo,
+    avisoSeguranca,
+    avisoMetaPeso,
+    avisosMudancaPeso,
+    avisosCondicoes,
+    avisosGestacaoCondicao,
+    avisosObjetivoRisco,
+    avisosAlcool,
+    avisosAlcoolReducaoDeDanos,
+    avisosTabagismo,
+    avisosSono,
+    avisosSonoDuracao,
+    avisosDieta,
+    avisosMedicamentos,
+    avisosAtividade,
+    avisosHidratacao,
+    avisosHistoricoDietas,
+    avisosRiscoFamiliar,
+    avisosRotinaTrabalho,
+    avisosMastigacao,
+    avisosFrequenciaRestaurante,
+    observacoesPaciente: dados.observacoesPaciente,
+  });
+
+  const relatorio = montarRelatorioConsulta({
+    imc,
+    classificacaoImc,
+    tmb,
+    tdee,
+    metaCalorica,
+    objetivo: dados.objetivo,
+    avisoSeguranca,
+    avisoMetaPeso,
+    condicoesSaude: dados.condicoesSaude ?? [],
+    gestante: dados.gestante ?? false,
+    lactante: dados.lactante ?? false,
+    historicoTranstornoAlimentar: dados.historicoTranstornoAlimentar ?? false,
+    condicaoClinicaComplexa,
+    perdaPesoNaoIntencional: dados.perdaPesoNaoIntencional,
+    ganhoPesoNaoIntencional: dados.ganhoPesoNaoIntencional,
+    nivelAtividade: dados.nivelAtividade,
+    ingestaoAguaCopos: dados.ingestaoAguaCopos,
+    aguaMl,
+    horasSono: dados.horasSono,
+    qualidadeSono: dados.qualidadeSono ?? null,
+    insonia: dados.insonia ?? false,
+    nivelEstresse: dados.nivelEstresse ?? null,
+    consumoAlcool: dados.consumoAlcool ?? "nunca",
+    tabagismo: dados.tabagismo ?? "nunca",
+    frequenciaRestaurante: dados.frequenciaRestaurante,
+    mastigacao: dados.mastigacao,
+    rotinaTrabalho: dados.rotinaTrabalho,
+    disposicaoManha: dados.disposicaoManha,
+    disposicaoTarde: dados.disposicaoTarde,
+    disposicaoNoite: dados.disposicaoNoite,
+    restricoesAlimentares: dados.restricoesAlimentares ?? [],
+    historicoDietetico: dados.historicoDietetico,
+    dietaAnterior: dados.dietaAnterior,
+    numeroConsulta: dados.numeroConsulta,
+    genero: dados.genero,
+    avaliacaoFisicaDados: dados.avaliacaoFisicaDados,
+    avaliacaoFisicaTextoMotor: dados.avaliacaoFisicaTextoMotor,
+    avaliacaoFisicaMancheteResumo: dados.avaliacaoFisicaMancheteResumo,
+    pesoAtualKg: dados.pesoKg,
+    pesoAnteriorKg: dados.pesoAnteriorKg,
+    avaliacaoFisicaAnteriorDados: dados.avaliacaoFisicaAnteriorDados,
+  });
+
+  return {
+    imc,
+    classificacaoImc,
+    tmb,
+    tdee,
+    metaCalorica,
+    macros,
+    aguaMl,
+    avisos,
+    resumo,
+    pesoMetaKg: pesoMetaSeguro,
+    avisoMetaPeso,
+    relatorio,
+  };
+}
+
+function arredondar(valor: number, casas: number): number {
+  const fator = 10 ** casas;
+  return Math.round(valor * fator) / fator;
+}

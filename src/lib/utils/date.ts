@@ -1,30 +1,29 @@
 import { format, parseISO, startOfWeek, addDays, isToday as isTodayFns } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-/** Fuso horário usado em toda a exibição de datas/horas do app — o público é
- *  majoritariamente brasileiro, mas o servidor (Vercel) roda em UTC. O
- *  Brasil não usa mais horário de verão desde 2019, então o deslocamento de
- *  -3h (Brasília) é fixo; se isso mudar, é só ajustar aqui. */
-const OFFSET_BRASILIA_HORAS = 3;
+export const hojeISO = () => format(new Date(), "yyyy-MM-dd");
 
-/** Converte um instante (UTC) pro "horário de parede" de Brasília, mas ainda
- *  como um objeto Date lido com os getters locais (getHours, getDate...) —
- *  é assim que o date-fns (format, startOfWeek etc.) e o próprio JS
- *  interpretam esse valor no servidor, que roda em UTC. */
-function paraHorarioLocal(data: Date): Date {
-  return new Date(data.getTime() - OFFSET_BRASILIA_HORAS * 60 * 60 * 1000);
+/** Intervalo mínimo entre consultas — a nutricionista atende em ciclos de
+ *  15 dias (duas consultas por mês). Usado pela trava real em
+ *  app/api/gerar-plano/route.ts, pelo bloqueio visual em
+ *  app/(app)/consulta/page.tsx e pelo selo informativo em
+ *  app/(app)/evolucao/page.tsx — os três leem esta mesma constante, pra
+ *  nunca ficarem dessincronizados entre si. */
+export const INTERVALO_MINIMO_ENTRE_CONSULTAS_DIAS = 15;
+
+/** Data em que a próxima consulta é liberada, dado o intervalo mínimo
+ *  configurado acima (ou um valor customizado, se informado). */
+export function calcularProximaLiberacao(
+  ultimaData: string | Date,
+  intervaloDias: number = INTERVALO_MINIMO_ENTRE_CONSULTAS_DIAS
+): Date {
+  const d = typeof ultimaData === "string" ? parseISO(ultimaData) : ultimaData;
+  return addDays(d, intervaloDias);
 }
-
-/** "Agora", já no horário de Brasília. */
-function agoraLocal(): Date {
-  return paraHorarioLocal(new Date());
-}
-
-export const hojeISO = () => format(agoraLocal(), "yyyy-MM-dd");
 
 export function formatarData(data: string | Date, padrao = "dd/MM/yyyy") {
   const d = typeof data === "string" ? parseISO(data) : data;
-  return format(paraHorarioLocal(d), padrao, { locale: ptBR });
+  return format(d, padrao, { locale: ptBR });
 }
 
 export function formatarDataLonga(data: string | Date) {
@@ -33,7 +32,7 @@ export function formatarDataLonga(data: string | Date) {
 
 export function isHoje(data: string | Date) {
   const d = typeof data === "string" ? parseISO(data) : data;
-  return isTodayFns(paraHorarioLocal(d));
+  return isTodayFns(d);
 }
 
 /** Quantos dias inteiros já se passaram desde a data informada. */
@@ -52,6 +51,7 @@ export const DIAS_SEMANA = [
   "sabado",
   "domingo",
 ] as const;
+
 export const DIAS_SEMANA_LABEL: Record<(typeof DIAS_SEMANA)[number], string> = {
   segunda: "Segunda",
   terca: "Terça",
@@ -62,32 +62,30 @@ export const DIAS_SEMANA_LABEL: Record<(typeof DIAS_SEMANA)[number], string> = {
   domingo: "Domingo",
 };
 
-/** Retorna as datas (segunda a domingo) da semana corrente, já no horário de Brasília. */
-export function semanaAtual(referencia = agoraLocal()) {
+/** Retorna as datas (segunda a domingo) da semana corrente. */
+export function semanaAtual(referencia = new Date()) {
   const inicio = startOfWeek(referencia, { weekStartsOn: 1 });
   return DIAS_SEMANA.map((dia, i) => ({ dia, data: addDays(inicio, i) }));
 }
 
-/** Dia da semana de hoje (horário de Brasília), no mesmo formato usado em dia_semana (segunda..domingo). */
-export function diaSemanaHoje() {
-  const indiceDiaJs = agoraLocal().getDay(); // 0 = domingo
-  return DIAS_SEMANA[(indiceDiaJs + 6) % 7];
-}
-
 /**
- * Calcula a sequência atual de dias consecutivos com pelo menos um registro
- * (peso, água, sono, humor, exercício, medidas ou refeição comida), a partir
- * de uma lista de datas em formato "yyyy-MM-dd" (podem se repetir e vir de
- * fontes diferentes). Se hoje ainda não tem nenhum registro, isso não quebra
- * a sequência — o dia ainda não terminou — e a contagem passa a considerar
- * a partir de ontem. Tudo calculado no horário de Brasília.
+ * Sequência atual de dias consecutivos com pelo menos um registro (peso,
+ * água, sono, humor, exercício ou medidas — qualquer um conta como "usei o
+ * app hoje"). Conta pra trás a partir de hoje; se hoje ainda não tem
+ * registro, começa a contar a partir de ontem (não quebra a sequência só
+ * porque a pessoa ainda não abriu o app hoje). Datas devem estar no formato
+ * "yyyy-MM-dd" (aceita duplicadas e fora de ordem).
  */
-export function calcularSequenciaAtual(datas: string[]): number {
-  const unicas = new Set(datas);
-  let cursor = agoraLocal();
-  if (!unicas.has(format(cursor, "yyyy-MM-dd"))) {
-    cursor = addDays(cursor, -1);
-  }
+export function calcularSequenciaAtual(datas: string[], referencia = new Date()): number {
+  const unicas = new Set(datas.map((d) => d.slice(0, 10)));
+  if (unicas.size === 0) return 0;
+
+  const hoje = format(referencia, "yyyy-MM-dd");
+  let cursor = unicas.has(hoje) ? referencia : addDays(referencia, -1);
+
+  // Se nem hoje nem ontem têm registro, a sequência foi quebrada.
+  if (!unicas.has(format(cursor, "yyyy-MM-dd"))) return 0;
+
   let sequencia = 0;
   while (unicas.has(format(cursor, "yyyy-MM-dd"))) {
     sequencia++;

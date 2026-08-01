@@ -16,9 +16,10 @@ import { classificarPercentualGordura } from "@/lib/nutrition/avaliacaoFisica";
 import { processarAvaliacao } from "./motor";
 import { montarConsultaAvaliacaoFisica } from "./montarConsulta";
 import { BibliotecaClinicaMock } from "./bibliotecaSelector";
+import { classificarImcDetalhado } from "./util";
 import type { AvaliacaoFisicaNormalizada, Categoria, Objetivo, PerfilPaciente } from "./types";
-// Nota: importa direto de ./motor e ./montarConsulta (não de ./index) pra
-// evitar import circular, já que index.ts reexporta este arquivo.
+// Nota: importa direto de ./motor, ./montarConsulta e ./util (não de
+// ./index) pra evitar import circular, já que index.ts reexporta este arquivo.
 
 function mapObjetivo(objetivo: ObjetivoNutricional): Objetivo {
   switch (objetivo) {
@@ -146,6 +147,7 @@ export function paraAvaliacaoFisicaNormalizada(
     obesidade: {
       imc: { valor: conhecidos.imc },
       imcCategoria: classificacaoImcParaCategoria(conhecidos.classificacaoImc),
+      imcCategoriaDetalhada: classificarImcDetalhado(conhecidos.imc),
       percentualGordura: { valor: dados.percentualGordura },
       percentualGorduraCategoria:
         dados.percentualGordura != null
@@ -206,15 +208,32 @@ export function paraPerfilPaciente(params: {
   };
 }
 
+export interface InterpretacoesAvaliacaoFisica {
+  /** Texto longo pro card de "Composição Corporal" (montarConsultaAvaliacaoFisica). */
+  textoCard: string | null;
+  /**
+   * Texto curto de 1-2 frases (o "manchete") pra usar como abertura do
+   * Resumo Geral no lugar da frase genérica de IMC — só vem preenchido
+   * quando alguma regra com `usoNoResumo: true` disparou (R1, R6, R7, R10,
+   * R12). Null nos demais casos: calculations.ts::montarResumoGeral cai de
+   * volta pro texto padrão (com a rotação de variantes já existente) — ver
+   * nota em montarRelatorioConsulta sobre por que o aviso de segurança
+   * (gestante/lactante/histórico de transtorno alimentar/condição clínica
+   * complexa/piso calórico) nunca depende deste campo.
+   */
+  mancheteResumo: string | null;
+}
+
 /**
- * Função de conveniência: junta a tradução de formato (acima) + a chamada
- * ao motor (index.ts) numa única chamada pronta pra usar de dentro da rota
- * que gera o resultado da consulta. Nunca lança erro — qualquer falha
- * (motor, biblioteca) resulta em null, e a consulta segue sem esse texto
- * extra, exatamente como já acontece com a própria extração por IA (ver
- * extrairAvaliacaoFisica).
+ * Função de conveniência: junta a tradução de formato (acima) + as duas
+ * chamadas ao motor (card + manchete do resumo) numa única chamada pronta
+ * pra usar de dentro da rota que gera o resultado da consulta — roda as
+ * regras uma vez só e reaproveita pros dois textos. Nunca lança erro —
+ * qualquer falha (motor, biblioteca) resulta em { null, null }, e a
+ * consulta segue sem esses textos extras, exatamente como já acontece com
+ * a própria extração por IA (ver extrairAvaliacaoFisica).
  */
-export async function gerarTextoInterpretacaoAvaliacaoFisica(
+export async function gerarInterpretacoesAvaliacaoFisica(
   dados: AvaliacaoFisicaExtraida | null,
   conhecidos: DadosConhecidosConsulta,
   perfilParams: {
@@ -223,8 +242,8 @@ export async function gerarTextoInterpretacaoAvaliacaoFisica(
     nivelAtividade: NivelAtividade;
     condicoesSaude: CondicaoSaude[];
   }
-): Promise<string | null> {
-  if (!dados || dados.percentualGordura == null) return null;
+): Promise<InterpretacoesAvaliacaoFisica> {
+  if (!dados || dados.percentualGordura == null) return { textoCard: null, mancheteResumo: null };
 
   try {
     const normalizado = paraAvaliacaoFisicaNormalizada(dados, conhecidos);
@@ -238,10 +257,21 @@ export async function gerarTextoInterpretacaoAvaliacaoFisica(
     });
     const biblioteca = new BibliotecaClinicaMock();
     const insights = processarAvaliacao(normalizado, perfil, null);
-    const texto = await montarConsultaAvaliacaoFisica(insights, normalizado, perfil, biblioteca);
-    return texto;
+
+    const textoCard = await montarConsultaAvaliacaoFisica(insights, normalizado, perfil, biblioteca);
+
+    const manchete = insights.find((i) => i.usoNoResumo);
+    const mancheteResumo = manchete
+      ? await biblioteca.selecionarInterpretacao({
+          codigoCategoria: manchete.codigoBibliotecaSugerido,
+          pacienteId: perfilParams.usuarioId,
+          formato: "curto",
+        })
+      : null;
+
+    return { textoCard, mancheteResumo };
   } catch (erro) {
-    console.error("Falha ao gerar interpretação da avaliação física, seguindo sem esse texto:", erro);
-    return null;
+    console.error("Falha ao gerar interpretação da avaliação física, seguindo sem esses textos:", erro);
+    return { textoCard: null, mancheteResumo: null };
   }
 }

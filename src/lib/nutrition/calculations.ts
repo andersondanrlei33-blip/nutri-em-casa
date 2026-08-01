@@ -1739,12 +1739,30 @@ function montarResumoGeral(
   objetivo: ObjetivoNutricional,
   metaCalorica: number,
   avisoSeguranca: string | null,
-  numeroConsulta: number
+  numeroConsulta: number,
+  /** Frase curta vinda do motor de interpretação (lib/avaliacaoFisica/),
+   *  quando alguma regra "manchete" disparou (ex: R1 — IMC mascarado por
+   *  massa muscular). Quando presente, SUBSTITUI só a abertura genérica de
+   *  IMC (que só olhava a classificação de 6 níveis) — o resto da frase
+   *  (foco no objetivo + aviso de segurança ou meta calórica) continua
+   *  exatamente igual, então nenhum aviso de segurança clínica (gestante,
+   *  lactante, histórico de transtorno alimentar, condição clínica
+   *  complexa, piso calórico mínimo) é perdido quando a manchete aparece —
+   *  ele sempre vem na cauda da frase, com ou sem manchete. */
+  mancheteResumo: string | null = null
 ): string {
+  const objetivoTexto = OBJETIVO_TEXTO[objetivo];
+  const cauda = avisoSeguranca
+    ? avisoSeguranca
+    : `Sua meta calórica foi definida em ${metaCalorica} kcal por dia, buscando um resultado gradual e seguro.`;
+
+  if (mancheteResumo) {
+    return `${mancheteResumo} O foco a partir de agora vai ser ${objetivoTexto}. ${cauda}`;
+  }
+
   // Só a primeira letra vira minúscula (a frase começa no meio: "...está na
   // faixa de X") — preserva o algarismo romano em "Obesidade grau II/III".
   const classificacaoLower = classificacaoImc.charAt(0).toLowerCase() + classificacaoImc.slice(1);
-  const objetivoTexto = OBJETIVO_TEXTO[objetivo];
   const abertura = escolherVariante(VARIANTES_RESUMO_ABERTURA, "resumo_abertura", numeroConsulta);
   const base =
     classificacaoImc === "Peso normal"
@@ -1752,8 +1770,7 @@ function montarResumoGeral(
       : `${abertura}seu IMC está na faixa de ${classificacaoLower}. ` +
         `${escolherVariante(VARIANTES_RESUMO_IMC_ACOLHIMENTO, "resumo_imc_acolhimento", numeroConsulta)}` +
         `o foco a partir de agora vai ser ${objetivoTexto}.`;
-  if (avisoSeguranca) return `${base} ${avisoSeguranca}`;
-  return `${base} Sua meta calórica foi definida em ${metaCalorica} kcal por dia, buscando um resultado gradual e seguro.`;
+  return `${base} ${cauda}`;
 }
 
 function montarRelatorioConsulta(params: {
@@ -1809,6 +1826,13 @@ function montarRelatorioConsulta(params: {
    *  Clínica) e só passa o resultado pronto pra cá. Null/undefined quando
    *  não há avaliação física, ou o motor não gerou nada aproveitável. */
   avaliacaoFisicaTextoMotor?: string | null;
+  /** Frase curta ("manchete") vinda do mesmo motor, pra abertura do Resumo
+   *  Geral — ver comentário completo em montarResumoGeral. Independente de
+   *  avaliacaoFisicaTextoMotor (esse é o texto longo do card; este é o
+   *  resumo curto de 1-2 frases). Null/undefined quando não há avaliação
+   *  física ou nenhuma regra "manchete" disparou — nesses casos o Resumo
+   *  Geral cai de volta pro texto padrão com rotação de variantes. */
+  avaliacaoFisicaMancheteResumo?: string | null;
 }): RelatorioConsulta {
   const numeroConsulta = params.numeroConsulta ?? 1;
 
@@ -1867,7 +1891,8 @@ function montarRelatorioConsulta(params: {
       params.objetivo,
       params.metaCalorica,
       params.avisoSeguranca,
-      numeroConsulta
+      numeroConsulta,
+      params.avaliacaoFisicaMancheteResumo ?? null
     ),
     pontosFortes,
     pontosAtencao,
@@ -2077,6 +2102,9 @@ export function gerarResultadoAvaliacao(
     // calculado de forma assíncrona em route.ts antes desta chamada — ver
     // comentário em montarRelatorioConsulta.
     avaliacaoFisicaTextoMotor?: string | null;
+    // Manchete curta do mesmo motor, pra abertura do Resumo Geral — ver
+    // comentário em montarResumoGeral.
+    avaliacaoFisicaMancheteResumo?: string | null;
   } & CondicaoEspecial
 ): ResultadoAvaliacao {
   const imc = calcularIMC(dados);
@@ -2232,6 +2260,7 @@ export function gerarResultadoAvaliacao(
     genero: dados.genero,
     avaliacaoFisicaDados: dados.avaliacaoFisicaDados,
     avaliacaoFisicaTextoMotor: dados.avaliacaoFisicaTextoMotor,
+    avaliacaoFisicaMancheteResumo: dados.avaliacaoFisicaMancheteResumo,
   });
 
   return {

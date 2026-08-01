@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { gerarResultadoAvaliacao, calcularIMC, classificarIMC } from "@/lib/nutrition/calculations";
 import { gerarPlanoAlimentar } from "@/lib/nutrition/mealPlanGenerator";
 import { extrairAvaliacaoFisica, type TipoImagemAceito } from "@/lib/nutrition/avaliacaoFisica";
-import { gerarTextoInterpretacaoAvaliacaoFisica } from "@/lib/avaliacaoFisica";
+import { gerarInterpretacoesAvaliacaoFisica } from "@/lib/avaliacaoFisica";
 import type { AvaliacaoFisicaExtraida, AvaliacaoNutricional, Receita } from "@/types/domain";
 
 /** Deduz o media_type pelo nome do arquivo — o bucket guarda o arquivo mas
@@ -215,25 +215,30 @@ export async function POST(request: Request) {
   // deliberadamente síncrono/puro. IMC/classificação recalculados aqui só
   // pra montar o texto (gerarResultadoAvaliacao recalcula os mesmos valores
   // logo abaixo, com o mesmo resultado — cálculo é puro e barato).
-  const avaliacaoFisicaTextoMotor = await gerarTextoInterpretacaoAvaliacaoFisica(
-    avaliacaoFisicaDados,
-    {
-      imc: calcularIMC({ pesoKg: dados.peso_kg, alturaCm: dados.altura_cm, idade, genero }),
-      classificacaoImc: classificarIMC(
-        calcularIMC({ pesoKg: dados.peso_kg, alturaCm: dados.altura_cm, idade, genero })
-      ),
-      genero,
-      idade,
-      alturaCm: dados.altura_cm,
-      pesoKg: dados.peso_kg,
-    },
-    {
-      usuarioId: user.id,
-      objetivo: dados.objetivo,
-      nivelAtividade: dados.nivel_atividade,
-      condicoesSaude: dados.condicoes_saude,
-    }
-  );
+  //
+  // Duas saídas: textoCard (texto longo, card de Composição Corporal) e
+  // mancheteResumo (frase curta, só quando uma regra "manchete" disparou —
+  // ex: IMC mascarado por massa muscular — usada como abertura do Resumo
+  // Geral no lugar do texto genérico de IMC).
+  const imcParaMotor = calcularIMC({ pesoKg: dados.peso_kg, alturaCm: dados.altura_cm, idade, genero });
+  const { textoCard: avaliacaoFisicaTextoMotor, mancheteResumo: avaliacaoFisicaMancheteResumo } =
+    await gerarInterpretacoesAvaliacaoFisica(
+      avaliacaoFisicaDados,
+      {
+        imc: imcParaMotor,
+        classificacaoImc: classificarIMC(imcParaMotor),
+        genero,
+        idade,
+        alturaCm: dados.altura_cm,
+        pesoKg: dados.peso_kg,
+      },
+      {
+        usuarioId: user.id,
+        objetivo: dados.objetivo,
+        nivelAtividade: dados.nivel_atividade,
+        condicoesSaude: dados.condicoes_saude,
+      }
+    );
 
   const resultado = gerarResultadoAvaliacao({
     pesoKg: dados.peso_kg,
@@ -273,6 +278,7 @@ export async function POST(request: Request) {
     numeroConsulta,
     avaliacaoFisicaDados,
     avaliacaoFisicaTextoMotor,
+    avaliacaoFisicaMancheteResumo,
   });
 
   const { data: avaliacaoSalva, error: erroAvaliacao } = await supabase

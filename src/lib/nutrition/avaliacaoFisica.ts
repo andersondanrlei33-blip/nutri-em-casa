@@ -13,15 +13,181 @@ import type {
 export const TIPOS_IMAGEM_ACEITOS = ["image/jpeg", "image/png", "image/webp"] as const;
 export type TipoImagemAceito = (typeof TIPOS_IMAGEM_ACEITOS)[number];
 
+/** Schema de uma "parte" da análise segmentar (braço/tronco/perna) — usado
+ *  duas vezes dentro do schema principal (massaMagra e massaGordura). */
+const SCHEMA_PARTE_SEGMENTO = {
+  type: "object",
+  properties: {
+    kg: { type: ["number", "null"] },
+    percentualPadrao: {
+      type: ["number", "null"],
+      description:
+        "% em relação ao padrão/ideal do aparelho pra esse segmento (coluna comum em laudos mais completos, ex: \"% padrão\" ou \"% ideal\").",
+    },
+  },
+  required: ["kg", "percentualPadrao"],
+};
+
+const SCHEMA_SEGMENTAR = {
+  type: ["object", "null"],
+  description:
+    "SÓ preencha se o documento trouxer uma tabela de análise por segmento corporal (braço esquerdo/direito, tronco, " +
+    "perna esquerda/direita) — comum em laudos de bioimpedância mais completos. Preencha só os segmentos que " +
+    "aparecerem (os demais como null nos campos internos). Se o documento não tiver essa tabela, use null.",
+  properties: {
+    bracoEsquerdo: SCHEMA_PARTE_SEGMENTO,
+    bracoDireito: SCHEMA_PARTE_SEGMENTO,
+    tronco: SCHEMA_PARTE_SEGMENTO,
+    pernaEsquerda: SCHEMA_PARTE_SEGMENTO,
+    pernaDireita: SCHEMA_PARTE_SEGMENTO,
+  },
+  required: ["bracoEsquerdo", "bracoDireito", "tronco", "pernaEsquerda", "pernaDireita"],
+};
+
+/**
+ * Schema da "ferramenta" que a IA é obrigada a preencher (ver tool_choice em
+ * extrairAvaliacaoFisica, abaixo). Isso substitui o formato antigo (pedir um
+ * bloco de texto em JSON e fazer JSON.parse nele), que quebrava sempre que a
+ * IA produzia um JSON tecnicamente inválido (vírgula/chave faltando, aspas
+ * não escapadas dentro de um texto livre etc. — erro real visto em produção:
+ * "SyntaxError: Expected ',' or '}'..."). Com tool use, a API Anthropic
+ * obriga a resposta a seguir esse formato, então essa classe de erro deixa
+ * de existir.
+ */
+const FERRAMENTA_EXTRACAO_AVALIACAO_FISICA = {
+  name: "registrar_avaliacao_fisica",
+  description: "Registra os dados encontrados no documento de avaliação física do paciente.",
+  input_schema: {
+    type: "object",
+    properties: {
+      dataAvaliacao: {
+        type: ["string", "null"],
+        description:
+          "Data do exame em AAAA-MM-DD, ou null se não encontrar. Procure por rótulos como \"Data\", \"Data do " +
+          "exame\", \"Data da avaliação\" ou \"Emitido em\"; o documento costuma trazer a data em DD/MM/AAAA — " +
+          "converta pra AAAA-MM-DD.",
+      },
+      metodo: {
+        type: ["string", "null"],
+        description: "Ex: bioimpedância, dobras cutâneas (protocolo de Pollock 7 dobras), DEXA — ou null.",
+      },
+      percentualGordura: {
+        type: ["number", "null"],
+        description:
+          "% de gordura corporal (PGC) — SEM o sinal de %. ATENÇÃO: IMC e % de gordura são DUAS medidas " +
+          "diferentes que aparecem perto uma da outra no documento e costumam ter valores numéricos parecidos " +
+          "(ex: IMC 27.3 e % de gordura 17.9 no mesmo laudo) — nunca copie o valor de uma pra outra. Confirme o " +
+          "rótulo exato ao lado do número: \"% de gordura\", \"gordura corporal\", \"gordura corp.\" ou \"PGC\" " +
+          "vai aqui; \"IMC\"/\"Índice de Massa Corporal\" NÃO vai aqui (não tem campo próprio pra IMC, o app já " +
+          "calcula isso separadamente — inclua no resumoTexto se quiser registrar).",
+      },
+      massaGordaKg: { type: ["number", "null"] },
+      massaMagraKg: { type: ["number", "null"] },
+      aguaCorporalPercentual: { type: ["number", "null"] },
+      tmbMedidoKcal: { type: ["number", "null"] },
+      idadeMetabolica: { type: ["number", "null"] },
+      dobrasCutaneasMm: {
+        type: ["object", "null"],
+        description: "Mapa \"local em português\" -> número em mm, ou null.",
+        additionalProperties: { type: "number" },
+      },
+      circunferenciasCm: {
+        type: ["object", "null"],
+        description: "Mapa \"local em português\" -> número em cm, ou null.",
+        additionalProperties: { type: "number" },
+      },
+      classificacaoAvaliador: {
+        type: ["string", "null"],
+        description: "Classificação que o próprio documento usa (ex: \"Atlético\"), ou null.",
+      },
+      observacoesAvaliador: {
+        type: ["string", "null"],
+        description: "Observações escritas no documento pelo profissional, ou null.",
+      },
+      nivelGorduraVisceral: {
+        type: ["number", "null"],
+        description: "Nível/índice de gordura visceral (comum em bioimpedância, escala tipicamente 1-20).",
+      },
+      relacaoCinturaQuadril: {
+        type: ["number", "null"],
+        description: "Relação cintura-quadril/RCQ/WHR (ex: 0.92) — só se o documento já trouxer esse número calculado.",
+      },
+      pesoIdealKg: {
+        type: ["number", "null"],
+        description: "Peso \"ideal\" calculado pelo próprio aparelho/documento — não é meta de peso do paciente.",
+      },
+      pesoCategoria: {
+        type: ["string", "null"],
+        enum: ["abaixo", "normal", "acima", null],
+        description:
+          "Preencha se o documento indicar, de QUALQUER forma explícita, se o peso está abaixo, dentro ou acima " +
+          "da faixa de referência do aparelho: pode ser um gráfico/barra/faixa visual, OU uma etiqueta de texto " +
+          "ao lado do valor (ex: \"Baixo\"/\"Padrão\"/\"Alto\", \"Abaixo\"/\"Normal\"/\"Acima\" — \"Excelente\" " +
+          "conta como \"acima\"). Mapeie o rótulo do documento pra um destes 3 valores. Null se não houver " +
+          "NENHUMA indicação explícita — nunca deduza isso só a partir do número cru.",
+      },
+      massaMuscularCategoria: {
+        type: ["string", "null"],
+        enum: ["abaixo", "normal", "acima", null],
+        description: "Mesma lógica de pesoCategoria, mas para a massa muscular (esquelética).",
+      },
+      segmentar: SCHEMA_SEGMENTAR,
+      resumoTexto: {
+        type: "string",
+        description:
+          "Resumo em texto corrido (3-5 frases) de tudo que você encontrou no documento, incluindo qualquer " +
+          "dado relevante que não coube nos campos acima (ex: o valor de IMC do documento, se houver).",
+      },
+    },
+    required: [
+      "dataAvaliacao",
+      "metodo",
+      "percentualGordura",
+      "massaGordaKg",
+      "massaMagraKg",
+      "aguaCorporalPercentual",
+      "tmbMedidoKcal",
+      "idadeMetabolica",
+      "dobrasCutaneasMm",
+      "circunferenciasCm",
+      "classificacaoAvaliador",
+      "observacoesAvaliador",
+      "nivelGorduraVisceral",
+      "relacaoCinturaQuadril",
+      "pesoIdealKg",
+      "pesoCategoria",
+      "massaMuscularCategoria",
+      "segmentar",
+      "resumoTexto",
+    ],
+  },
+} as const;
+
+const TEXTO_INSTRUCAO_EXTRACAO =
+  "Esta é a foto de um documento de avaliação física de um paciente (bioimpedância, dobras cutâneas, " +
+  "antropometria ou similar, feito por um educador físico, personal trainer ou nutricionista). Leia com atenção " +
+  "e registre os dados encontrados usando a ferramenta disponível. Use null em qualquer campo que o documento " +
+  "não trouxer — NUNCA invente ou estime um valor que não está escrito. Números devem vir sem unidade (ex: " +
+  "18.5, não \"18.5%\").\n\n" +
+  "Antes de responder, releia o que você vai registrar e confirme: o valor de percentualGordura é realmente o " +
+  "que está escrito ao lado do rótulo de gordura corporal, e não o valor de IMC, peso ou de outro indicador " +
+  "parecido? (Veja a descrição do campo percentualGordura pra mais detalhes sobre esse erro comum.)";
+
 /**
  * Lê uma foto de um documento de avaliação física com a IA e extrai os
  * dados num formato estruturado. A IA só faz leitura/organização do que
  * está na imagem — nunca decide o que fazer com os números (isso é
  * avaliarComposicaoCorporal, abaixo, 100% determinístico). Em qualquer
- * falha (imagem ilegível, resposta fora do formato, erro de rede), retorna
- * null — a consulta segue normalmente sem os dados extras, nunca trava por
- * causa disso (mesmo princípio de resiliência já usado em
+ * falha (imagem ilegível, erro de rede), retorna null — a consulta segue
+ * normalmente sem os dados extras, nunca trava por causa disso (mesmo
+ * princípio de resiliência já usado em
  * mealPlanGenerator.ts::classificarCondicaoLivre).
+ *
+ * Usa "tool use" (ver FERRAMENTA_EXTRACAO_AVALIACAO_FISICA acima) em vez de
+ * pedir um bloco de texto em JSON solto — a API Anthropic obriga a resposta
+ * a seguir o schema definido, o que elimina os erros de "JSON malformado"
+ * que apareciam esporadicamente com o formato antigo (texto livre +
+ * JSON.parse manual).
  */
 export async function extrairAvaliacaoFisica(
   base64: string,
@@ -32,96 +198,30 @@ export async function extrairAvaliacaoFisica(
 
   try {
     const resposta = await anthropic.messages.create({
-      // Modelo mais forte que o resto do app (ver NUTRI_MODEL_VISAO em
-      // anthropicClient.ts) — essa é a única chamada de IA que precisa ler
-      // uma imagem com precisão numérica; um erro aqui (ex: confundir IMC
-      // com % de gordura) muda toda a interpretação clínica do relatório.
       model: NUTRI_MODEL_VISAO,
-      max_tokens: 1500,
+      max_tokens: 2000,
+      tools: [FERRAMENTA_EXTRACAO_AVALIACAO_FISICA],
+      tool_choice: { type: "tool", name: "registrar_avaliacao_fisica" },
       messages: [
         {
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-            {
-              type: "text",
-              text:
-                "Esta é a foto de um documento de avaliação física de um paciente (bioimpedância, dobras " +
-                "cutâneas, antropometria ou similar, feito por um educador físico, personal trainer ou " +
-                "nutricionista). Leia com atenção e extraia os dados encontrados no seguinte formato JSON. Use " +
-                "null em qualquer campo que o documento não trouxer — NUNCA invente ou estime um valor que não " +
-                "está escrito. Números devem vir sem unidade (ex: 18.5, não \"18.5%\"). Datas em formato ISO " +
-                "(AAAA-MM-DD).\n\n" +
-                "ATENÇÃO — dois erros comuns que você deve evitar:\n" +
-                "1. IMC e % de gordura corporal são DUAS medidas diferentes que aparecem perto uma da outra " +
-                "no documento e têm valores numéricos parecidos (ex: IMC 27.3 e % de gordura 17.9 no mesmo " +
-                "laudo). NUNCA copie o valor de uma pra outra. Confirme o rótulo exato ao lado de cada número " +
-                "antes de preencher: \"IMC\" ou \"Índice de Massa Corporal\" vai no resumoTexto (não existe " +
-                "campo próprio pra IMC aqui, o app já calcula isso separadamente); \"% de gordura\", \"gordura " +
-                "corporal\", \"gordura corp.\" ou \"PGC\" vai em percentualGordura.\n" +
-                "2. Antes de responder, releia o JSON que você montou e confira: o valor de percentualGordura é " +
-                "realmente o que está escrito ao lado do rótulo de gordura corporal, e não o valor de IMC, " +
-                "peso ou de outro indicador?\n\n" +
-                "{\n" +
-                '  "dataAvaliacao": "AAAA-MM-DD ou null — procure por rótulos como \\"Data\\", \\"Data do ' +
-                'exame\\", \\"Data da avaliação\\" ou \\"Emitido em\\"; datas no documento costumam vir em ' +
-                'DD/MM/AAAA, converta pra AAAA-MM-DD",\n' +
-                '  "metodo": "ex: bioimpedância, dobras cutâneas (protocolo de Pollock 7 dobras), DEXA — ou null",\n' +
-                '  "percentualGordura": número ou null — ver aviso acima, não confunda com IMC,\n' +
-                '  "massaGordaKg": número ou null,\n' +
-                '  "massaMagraKg": número ou null,\n' +
-                '  "aguaCorporalPercentual": número ou null,\n' +
-                '  "tmbMedidoKcal": número ou null,\n' +
-                '  "idadeMetabolica": número ou null,\n' +
-                '  "dobrasCutaneasMm": { "local em português": número, ... } ou null,\n' +
-                '  "circunferenciasCm": { "local em português": número, ... } ou null,\n' +
-                '  "classificacaoAvaliador": "classificação que o próprio documento usa (ex: Atlético) ou null",\n' +
-                '  "observacoesAvaliador": "observações escritas no documento pelo profissional, ou null",\n' +
-                '  "nivelGorduraVisceral": número ou null — nível/índice de gordura visceral (comum em ' +
-                'bioimpedância, escala tipicamente 1-20),\n' +
-                '  "relacaoCinturaQuadril": número ou null — relação cintura-quadril/RCQ/WHR (ex: 0.92), só se ' +
-                'o documento já trouxer esse número calculado,\n' +
-                '  "pesoIdealKg": número ou null — peso "ideal" calculado pelo próprio aparelho/documento ' +
-                '(não é meta de peso do paciente),\n' +
-                '  "pesoCategoria": "abaixo" | "normal" | "acima" | null — preencha se o documento indicar, de ' +
-                'QUALQUER forma explícita, se o peso está abaixo, dentro ou acima da faixa de referência do ' +
-                'aparelho: pode ser um gráfico/barra/faixa visual, OU uma etiqueta de texto ao lado do valor ' +
-                '(ex: "Baixo"/"Padrão"/"Alto", "Abaixo"/"Normal"/"Acima", "Excelente" conta como "acima"). ' +
-                "Mapeie o rótulo do documento pra um destes 3 valores. Só use null se não houver NENHUMA " +
-                "indicação explícita (nem gráfico, nem etiqueta) — nunca deduza isso só a partir do número cru.\n" +
-                '  "massaMuscularCategoria": "abaixo" | "normal" | "acima" | null — mesma lógica do campo ' +
-                "acima (gráfico/barra/faixa OU etiqueta de texto), mas para a massa muscular (esquelética).\n" +
-                '  "segmentar": {\n' +
-                '    "massaMagra": { "bracoEsquerdo": {"kg": número|null, "percentualPadrao": número|null}, ' +
-                '"bracoDireito": {...}, "tronco": {...}, "pernaEsquerda": {...}, "pernaDireita": {...} } | null,\n' +
-                '    "massaGordura": { mesma estrutura de massaMagra } | null\n' +
-                '  } — SÓ preencha se o documento trouxer uma tabela de análise por segmento corporal (braço ' +
-                'esquerdo/direito, tronco, perna esquerda/direita), comum em laudos de bioimpedância mais ' +
-                'completos. "percentualPadrao" é a coluna de % em relação ao padrão/ideal do aparelho pra ' +
-                "aquele segmento, se existir (ex: \"% padrão\", \"% ideal\"). Preencha só os segmentos que " +
-                "aparecerem, com null nos que faltarem. Se o documento não tiver essa tabela, use null pro " +
-                "objeto inteiro (massaMagra e/ou massaGordura), não invente valores.\n" +
-                '  "resumoTexto": "resumo em texto corrido (3-5 frases) de tudo que você encontrou no documento, ' +
-                'incluindo qualquer dado relevante que não coube nos campos acima"\n' +
-                "}\n\n" +
-                "Responda APENAS com o JSON, sem nenhuma explicação antes ou depois.",
-            },
+            { type: "text", text: TEXTO_INSTRUCAO_EXTRACAO },
           ],
         },
       ],
     });
 
-    const texto = resposta.content
-      .filter((bloco) => bloco.type === "text")
-      .map((bloco) => (bloco as { text: string }).text)
-      .join("\n");
-    const jsonMatch = texto.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-    const bruto = JSON.parse(jsonMatch[0]);
+    const blocoFerramenta = resposta.content.find((bloco) => bloco.type === "tool_use") as
+      | { type: "tool_use"; input: unknown }
+      | undefined;
+    if (!blocoFerramenta || !blocoFerramenta.input || typeof blocoFerramenta.input !== "object") return null;
+    const bruto = blocoFerramenta.input as Record<string, unknown>;
 
-    // Nunca confia cegamente no shape devolvido pela IA — normaliza campo a
-    // campo, com null como padrão seguro pra qualquer coisa fora do
-    // esperado (mesmo princípio usado em mealPlanGenerator.ts).
+    // Mesmo com tool use (que já obriga o formato), continua validando campo
+    // a campo antes de confiar no valor — defesa em profundidade, mesmo
+    // princípio usado em mealPlanGenerator.ts pra qualquer resposta de IA.
     const numeroOuNull = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
     const textoOuNull = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
     const mapaOuNull = (v: unknown): Record<string, number> | null => {
@@ -151,7 +251,10 @@ export async function extrairAvaliacaoFisica(
       }
       return algumPreenchido ? resultado : null;
     };
-    const bruteSegmentar = bruto.segmentar && typeof bruto.segmentar === "object" ? bruto.segmentar : null;
+    const bruteSegmentar =
+      bruto.segmentar && typeof bruto.segmentar === "object"
+        ? (bruto.segmentar as Record<string, unknown>)
+        : null;
     const massaMagraSegmentar = bruteSegmentar ? segmentoOuNull(bruteSegmentar.massaMagra) : null;
     const massaGorduraSegmentar = bruteSegmentar ? segmentoOuNull(bruteSegmentar.massaGordura) : null;
 

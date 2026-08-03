@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Stethoscope, FileText } from "lucide-react";
+import { ChevronLeft, Stethoscope, FileText, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/Card";
 import { formatarData } from "@/lib/utils/date";
@@ -48,13 +48,29 @@ export default async function DetalheConsultaPage({ params }: { params: Promise<
         <ChevronLeft className="h-4 w-4" /> Voltar para histórico
       </Link>
 
-      <div className="mb-1 flex items-center gap-2">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-          <Stethoscope className="h-4 w-4" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+              <Stethoscope className="h-4 w-4" />
+            </div>
+            <h1 className="text-xl font-bold text-foreground">Consulta nutricional</h1>
+          </div>
+          <p className="text-sm text-muted">{formatarData(avaliacao.criado_em, "dd/MM/yyyy 'às' HH:mm")}</p>
         </div>
-        <h1 className="text-xl font-bold text-foreground">Consulta nutricional</h1>
+
+        {/* Exportável mesmo pra consultas salvas antes do relatório em
+         *  cartões existir — a rota da API monta um PDF mais simples nesse
+         *  caso, a partir do resumo antigo (ver app/api/consultas/[id]/pdf). */}
+        <a
+          href={`/api/consultas/${avaliacao.id}/pdf`}
+          download
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground hover:bg-black/[0.02]"
+        >
+          <Download className="h-4 w-4" />
+          Baixar PDF
+        </a>
       </div>
-      <p className="text-sm text-muted">{formatarData(avaliacao.criado_em, "dd/MM/yyyy 'às' HH:mm")}</p>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Metrica label="IMC" valor={avaliacao.imc.toString()} sub={avaliacao.classificacao_imc} />
@@ -143,3 +159,4 @@ function LinkArquivoAvaliacaoFisica({ url, nome }: { url: string | null; nome: s
   const props = { href: url, target: "_blank", rel: "noopener noreferrer", className: "text-brand-700 underline hover:text-brand-800" };
   return <a {...props}>{nome}</a>;
 }
+

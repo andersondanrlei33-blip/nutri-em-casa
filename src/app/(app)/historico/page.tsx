@@ -1,9 +1,5 @@
-import Link from "next/link";
-import { History, Stethoscope, Scale, Dumbbell, Ruler, Moon, Smile, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { Card, CardContent } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { formatarData } from "@/lib/utils/date";
+import { FiltroTimelineHistorico, type EventoHistorico } from "@/components/historico/FiltroTimelineHistorico";
 import type {
   AvaliacaoNutricional,
   RegistroPeso,
@@ -12,14 +8,6 @@ import type {
   RegistroSono,
   RegistroHumor,
 } from "@/types/domain";
-
-interface EventoHistorico {
-  data: string;
-  titulo: string;
-  descricao: string;
-  icone: typeof History;
-  href?: string;
-}
 
 export default async function HistoricoPage() {
   const supabase = await createClient();
@@ -38,19 +26,23 @@ export default async function HistoricoPage() {
       supabase.from("registros_humor").select("*").eq("usuario_id", user.id).order("data", { ascending: false }).limit(20),
     ]);
 
+  // Cada evento carrega `tipo` (não o componente do ícone — ver comentário
+  // em FiltroTimelineHistorico.tsx sobre por que o ícone é resolvido lá
+  // dentro, não aqui) pra alimentar tanto a listagem quanto os chips de
+  // filtro por tipo de evento.
   const eventos: EventoHistorico[] = [
     ...((avaliacoes ?? []) as AvaliacaoNutricional[]).map((a) => ({
       data: a.criado_em,
       titulo: "Consulta nutricional realizada",
       descricao: `IMC ${a.imc} (${a.classificacao_imc}) · Meta calórica ${a.meta_calorica} kcal`,
-      icone: Stethoscope,
+      tipo: "consulta" as const,
       href: `/historico/consulta/${a.id}`,
     })),
     ...((pesos ?? []) as RegistroPeso[]).map((p) => ({
       data: p.data,
       titulo: "Peso registrado",
       descricao: `${p.peso_kg} kg${p.observacoes ? ` — ${p.observacoes}` : ""}`,
-      icone: Scale,
+      tipo: "peso" as const,
     })),
     ...((medidas ?? []) as RegistroMedidas[]).map((m) => ({
       data: m.data,
@@ -63,25 +55,25 @@ export default async function HistoricoPage() {
         ]
           .filter(Boolean)
           .join(" · ") || "Medidas atualizadas",
-      icone: Ruler,
+      tipo: "medidas" as const,
     })),
     ...((exercicios ?? []) as RegistroExercicio[]).map((ex) => ({
       data: ex.data,
       titulo: "Exercício registrado",
       descricao: `${ex.tipo} · ${ex.duracao_min} min · intensidade ${ex.intensidade}`,
-      icone: Dumbbell,
+      tipo: "exercicio" as const,
     })),
     ...((sono ?? []) as RegistroSono[]).map((s) => ({
       data: s.data,
       titulo: "Sono registrado",
       descricao: `${s.horas}h · qualidade ${s.qualidade}/5`,
-      icone: Moon,
+      tipo: "sono" as const,
     })),
     ...((humor ?? []) as RegistroHumor[]).map((h) => ({
       data: h.data,
       titulo: "Humor registrado",
       descricao: `Humor ${h.humor}/5 · Energia ${h.energia}/5${h.observacoes ? ` — ${h.observacoes}` : ""}`,
-      icone: Smile,
+      tipo: "humor" as const,
     })),
   ].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
 
@@ -92,47 +84,8 @@ export default async function HistoricoPage() {
         <p className="mt-1 text-sm text-muted">Linha do tempo completa da sua jornada no Nutri em Casa.</p>
       </div>
 
-      {eventos.length === 0 ? (
-        <EmptyState
-          icone={History}
-          titulo="Ainda não há histórico"
-          descricao="À medida que você usa o app, seus eventos importantes aparecerão aqui."
-        />
-      ) : (
-        <Card>
-          <CardContent className="divide-y divide-border">
-            {eventos.map((evento, i) => {
-              const conteudo = (
-                <>
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-                    <evento.icone className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">{evento.titulo}</p>
-                    <p className="text-xs text-muted">{evento.descricao}</p>
-                    <p className="mt-0.5 text-xs text-muted">{formatarData(evento.data, "dd/MM/yyyy 'às' HH:mm")}</p>
-                  </div>
-                  {evento.href && <ChevronRight className="h-4 w-4 shrink-0 self-center text-muted" />}
-                </>
-              );
-
-              return evento.href ? (
-                <Link
-                  key={i}
-                  href={evento.href}
-                  className="-mx-1 flex gap-3 rounded-lg px-1 py-4 transition-colors first:pt-0 last:pb-0 hover:bg-black/[0.02]"
-                >
-                  {conteudo}
-                </Link>
-              ) : (
-                <div key={i} className="flex gap-3 py-4 first:pt-0 last:pb-0">
-                  {conteudo}
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
+      <FiltroTimelineHistorico eventos={eventos} />
     </div>
   );
 }
+

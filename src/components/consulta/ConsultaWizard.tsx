@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp, ShieldAlert, Upload, FileText, X, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Stethoscope, TrendingDown, TrendingUp, ShieldAlert, Upload, FileText, X, Loader2, Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -417,6 +417,10 @@ export function ConsultaWizard({
     resumo: string;
     avisoMetaPeso: string | null;
     relatorio: RelatorioConsulta | null;
+    /** Id da avaliação recém-salva — usado só pra montar o link de "Baixar
+     *  PDF" (GET /api/consultas/[id]/pdf), disponível logo após finalizar a
+     *  consulta, sem precisar ir até o Histórico. */
+    avaliacaoId: string;
     // Valores REAIS calculados e salvos pelo servidor — nunca reaproveitar o
     // `preview` calculado no navegador aqui: o preview é só uma prévia
     // rápida enquanto a pessoa responde, e não recebe campos como histórico
@@ -670,6 +674,7 @@ export function ConsultaWizard({
         // Vem da avaliação já salva no banco (dados.avaliacao) — já passou
         // pela trava de condição clínica complexa no servidor, diferente do
         // `preview` calculado no navegador enquanto a pessoa respondia.
+        avaliacaoId: dados.avaliacao.id,
         imc: dados.avaliacao.imc,
         classificacaoImc: dados.avaliacao.classificacao_imc,
         tmb: dados.avaliacao.tmb,
@@ -734,9 +739,19 @@ export function ConsultaWizard({
               Seu plano alimentar anterior foi substituído por um novo, ajustado a esses dados.
             </p>
           )}
-          <Button className="mt-6" onClick={() => router.push("/plano")}>
-            Ver meu plano alimentar
-          </Button>
+          <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <Button onClick={() => router.push("/plano")}>Ver meu plano alimentar</Button>
+            {resultadoFinal.relatorio && (
+              <a
+                href={`/api/consultas/${resultadoFinal.avaliacaoId}/pdf`}
+                download
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground hover:bg-black/[0.02]"
+              >
+                <Download className="h-4 w-4" />
+                Baixar PDF
+              </a>
+            )}
+          </div>
         </CardContent>
       </Card>
     );
@@ -955,3 +970,4 @@ function Metrica({ label, valor, sub }: { label: string; valor: string; sub?: st
     </div>
   );
 }
+

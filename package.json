@@ -25,7 +25,8 @@
     "date-fns": "^3.6.0",
     "nanoid": "^5.0.7",
     "@anthropic-ai/sdk": "^0.27.3",
-    "stripe": "^16.9.0"
+    "stripe": "^16.9.0",
+    "@react-pdf/renderer": "^4.5.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

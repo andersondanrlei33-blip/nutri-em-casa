@@ -66,8 +66,14 @@ export function FiltroTimelineHistorico({ eventos }: { eventos: EventoHistorico[
 
   function alternarTipo(tipo: TipoEventoHistorico) {
     setTiposSelecionados((prev) => {
+      const jaMarcado = prev.has(tipo);
+      // Nunca deixa zerar a seleção: clicar no último chip ainda marcado não
+      // faz nada, em vez de desmarcar tudo e cair numa tela em branco sem
+      // nenhum jeito óbvio de voltar (era isso que parecia "botão quebrado"
+      // — clicar e a lista simplesmente sumir).
+      if (jaMarcado && prev.size === 1) return prev;
       const novo = new Set(prev);
-      if (novo.has(tipo)) novo.delete(tipo);
+      if (jaMarcado) novo.delete(tipo);
       else novo.add(tipo);
       return novo;
     });

@@ -196,6 +196,38 @@ interface CandidataResumo {
   gordura_g: number;
 }
 
+/**
+ * Orientação geral sobre alimentação ao redor do treino — substitui a
+ * geração de refeições dedicadas de categoria "pre_treino"/"pos_treino" no
+ * plano. Motivo da troca: são só mais duas refeições pra encaixar no dia
+ * (concorrendo de horário com o jantar, ver #59), a biblioteca não tem
+ * repertório suficiente pra variar bem essas duas categorias específicas, e
+ * uma orientação em texto é mais fácil da paciente adaptar ao dia a dia
+ * dela do que um card fixo de refeição. Retorna null quando o paciente não
+ * indicou querer essa orientação (`quer_pre_pos_treino` falso/null).
+ */
+function construirOrientacaoPrePosTreino(avaliacao: AvaliacaoNutricional): string | null {
+  if (!avaliacao.quer_pre_pos_treino) return null;
+  const horario = avaliacao.horario_treino?.trim();
+  return (
+    "Alimentação ao redor do treino: nos dias em que for treinar, faça uma refeição rica em carboidrato de fácil " +
+    "digestão de 1 a 2 horas antes, com proteína moderada. Depois do treino, priorize proteína de boa qualidade e " +
+    "carboidrato dentro de até 2 horas, para ajudar na recuperação muscular." +
+    (horario
+      ? ` Como você costuma treinar por volta de ${horario}, organize as refeições do dia em torno desse horário.`
+      : "")
+  );
+}
+
+/** Anexa a orientação de pré/pós-treino (quando aplicável) ao final do
+ *  texto de observações do plano — usado tanto no caminho com IA quanto no
+ *  fallback determinístico, pra garantir que a orientação apareça sempre
+ *  que o paciente pedir, independente de qual caminho gerou o plano. */
+function comOrientacaoPrePosTreino(observacoesBase: string, avaliacao: AvaliacaoNutricional): string {
+  const orientacao = construirOrientacaoPrePosTreino(avaliacao);
+  return orientacao ? `${observacoesBase}\n\n${orientacao}` : observacoesBase;
+}
+
 async function gerarPlanoComIA(
   avaliacao: AvaliacaoNutricional,
   receitasDisponiveis: Receita[]
@@ -373,7 +405,10 @@ Gere ${avaliacao.refeicoes_por_dia} refeições para cada um dos 7 dias.`;
   // carboidrato/gordura que sobrou com um complemento da biblioteca.
   const refeicoesAjustadas = ajustarPlanoParaMetas(refeicoesValidadas, avaliacao, receitasDisponiveis);
 
-  return { refeicoes: refeicoesAjustadas, observacoes_nutricionista: plano.observacoes_nutricionista };
+  return {
+    refeicoes: refeicoesAjustadas,
+    observacoes_nutricionista: comOrientacaoPrePosTreino(plano.observacoes_nutricionista, avaliacao),
+  };
 }
 
 /**
@@ -463,7 +498,10 @@ function gerarPlanoTemplate(avaliacao: AvaliacaoNutricional, receitasDisponiveis
   // que sobrar com um complemento simples (arroz, batata doce, whey, etc.)
   const refeicoesAjustadas = ajustarPlanoParaMetas(refeicoes, avaliacao, receitasDisponiveis);
 
-  return { refeicoes: refeicoesAjustadas, observacoes_nutricionista: observacoes };
+  return {
+    refeicoes: refeicoesAjustadas,
+    observacoes_nutricionista: comOrientacaoPrePosTreino(observacoes, avaliacao),
+  };
 }
 
 interface TemplateRefeicao {

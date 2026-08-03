@@ -361,7 +361,13 @@ export type CategoriaReceita =
   | "lanche"
   | "sobremesa"
   | "pre_treino"
-  | "pos_treino";
+  | "pos_treino"
+  /** Item simples e isolado (fonte de carboidrato, proteína magra ou
+   *  gordura boa) — não é uma refeição, é usado só pelo motor de ajuste de
+   *  macros (lib/nutrition/ajusteMacros.ts) pra completar um dia que ficou
+   *  desviado da meta do paciente. Nunca aparece nos templates fixos de
+   *  refeição (escolherTemplates em mealPlanGenerator.ts). */
+  | "complemento";
 export interface IngredienteReceita {
   nome: string;
   quantidade: number;

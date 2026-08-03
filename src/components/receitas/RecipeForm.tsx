@@ -37,6 +37,7 @@ const CATEGORIAS: { valor: CategoriaReceita; label: string }[] = [
   { valor: "sobremesa", label: "Sobremesa" },
   { valor: "pre_treino", label: "Pré-treino" },
   { valor: "pos_treino", label: "Pós-treino" },
+  { valor: "complemento", label: "Complemento" },
 ];
 
 export function RecipeForm({ aberto, aoFechar, aoSalvar, receitaExistente }: RecipeFormProps) {
@@ -222,3 +223,4 @@ function CampoNumerico({ label, valor, aoMudar }: { label: string; valor: number
     </div>
   );
 }
+

@@ -14,6 +14,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
   sobremesa: "Sobremesa",
   pre_treino: "Pré-treino",
   pos_treino: "Pós-treino",
+  complemento: "Complemento",
 };
 
 interface RecipeCardProps {
@@ -74,3 +75,4 @@ export function RecipeCard({ receita, ehPropria, aoAlternarFavorito, aoEditar, a
     </div>
   );
 }
+

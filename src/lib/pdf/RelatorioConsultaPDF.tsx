@@ -47,14 +47,14 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 },
   titulo: { fontSize: 16, fontFamily: "Helvetica-Bold" },
   subtitulo: { fontSize: 9, color: CORES.muted, marginTop: 2 },
-  secao: { marginTop: 16 },
-  secaoTitulo: { fontSize: 9, fontFamily: "Helvetica-Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
-  metricasGrid: { flexDirection: "row", flexWrap: "wrap", marginTop: 12 },
+  secao: { marginTop: 12 },
+  secaoTitulo: { fontSize: 9, fontFamily: "Helvetica-Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 },
+  metricasGrid: { flexDirection: "row", flexWrap: "wrap", marginTop: 10 },
   metricaCard: { width: "23%", backgroundColor: CORES.fundoCard, borderRadius: 8, padding: 8, marginRight: "2.6%", marginBottom: 8 },
   metricaLabel: { fontSize: 7.5, color: CORES.muted },
   metricaValor: { fontSize: 12, fontFamily: "Helvetica-Bold", marginTop: 2 },
-  paragrafo: { fontSize: 9.5, lineHeight: 1.5, color: CORES.foreground },
-  cardBase: { borderRadius: 8, padding: 10, marginBottom: 6 },
+  paragrafo: { fontSize: 9.5, lineHeight: 1.42, color: CORES.foreground },
+  cardBase: { borderRadius: 8, padding: 10, marginBottom: 5 },
   cardBranco: { backgroundColor: "#ffffff", borderWidth: 1, borderColor: CORES.border },
   cardTitulo: { fontSize: 9.5, fontFamily: "Helvetica-Bold", marginBottom: 3 },
   listaItem: { flexDirection: "row", marginBottom: 5, alignItems: "flex-start" },
@@ -72,10 +72,13 @@ const styles = StyleSheet.create({
   },
 });
 
-const CORES_TENDENCIA: Record<EvolucaoMetrica["tendencia"], { bg: string; texto: string; rotulo: string }> = {
-  favoravel: { bg: CORES.green50, texto: CORES.green700, rotulo: "melhora" },
-  estavel: { bg: CORES.amber50, texto: CORES.amber700, rotulo: "estável" },
-  desfavoravel: { bg: CORES.red50, texto: CORES.red700, rotulo: "atenção" },
+// Mesma paleta e mesmas cores de barra usadas em CartaoEvolucaoMetrica no
+// RelatorioEmCartoes.tsx (bg-green-500/amber-400/red-500) — hex copiados
+// diretamente da paleta padrão do Tailwind, já que o PDF não lê classes CSS.
+const CORES_TENDENCIA: Record<EvolucaoMetrica["tendencia"], { bg: string; texto: string; rotulo: string; barra: string }> = {
+  favoravel: { bg: CORES.green50, texto: CORES.green700, rotulo: "melhora", barra: "#22c55e" },
+  estavel: { bg: CORES.amber50, texto: CORES.amber700, rotulo: "estável", barra: "#fbbf24" },
+  desfavoravel: { bg: CORES.red50, texto: CORES.red700, rotulo: "atenção", barra: "#ef4444" },
 };
 
 export interface RelatorioConsultaPDFProps {
@@ -194,8 +197,14 @@ export function RelatorioConsultaPDF({
           </View>
         )}
 
+        {/* Sem wrap={false} aqui de propósito — o texto comparativo do laudo
+         *  pode ser longo (vários parágrafos), e travar o bloco inteiro
+         *  numa página só deixava um vão enorme em branco no fim da página
+         *  anterior sempre que ele não cabia inteiro. Deixando o React-PDF
+         *  quebrar o texto no meio, o conteúdo flui contínuo, igual a
+         *  rolagem da tela do Histórico. */}
         {relatorio.composicaoCorporal && (
-          <View style={styles.secao} wrap={false}>
+          <View style={styles.secao}>
             <Text style={styles.secaoTitulo}>Composição corporal</Text>
             <View style={[styles.cardBase, styles.cardBranco]}>
               <Text style={styles.paragrafo}>
@@ -310,9 +319,16 @@ function MetricaCard({ label, valor, sub }: { label: string; valor: string; sub?
 function CartaoEvolucao({ metrica }: { metrica: EvolucaoMetrica }) {
   const cor = CORES_TENDENCIA[metrica.tendencia];
   const sinal = metrica.deltaAbsoluto > 0 ? "+" : "";
+  // Mesma conta de largura de barra do CartaoEvolucaoMetrica em
+  // RelatorioEmCartoes.tsx: as duas barras (anterior e atual) são relativas
+  // ao maior dos dois valores, pra dar a mesma leitura visual "antes vs.
+  // depois" que a tela do Histórico mostra.
+  const maiorValor = Math.max(metrica.valorAnterior, metrica.valorAtual, 0.0001);
+  const larguraAnterior = `${(metrica.valorAnterior / maiorValor) * 100}%`;
+  const larguraAtual = `${(metrica.valorAtual / maiorValor) * 100}%`;
   return (
     <View style={[styles.cardBase, styles.cardBranco]} wrap={false}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <Text style={[styles.paragrafo, { color: CORES.muted, fontSize: 8 }]}>{metrica.rotulo}</Text>
         <Text
           style={{
@@ -328,17 +344,33 @@ function CartaoEvolucao({ metrica }: { metrica: EvolucaoMetrica }) {
           {cor.rotulo}
         </Text>
       </View>
-      <Text style={[styles.paragrafo, { fontSize: 10 }]}>
-        {metrica.valorAnterior}
-        {metrica.unidade} para {metrica.valorAtual}
-        {metrica.unidade}{"  "}
-        <Text style={{ color: cor.texto, fontFamily: "Helvetica-Bold" }}>
+      <View style={{ flexDirection: "row", alignItems: "baseline", marginBottom: 6 }}>
+        <Text style={[styles.paragrafo, { fontSize: 8, color: CORES.muted }]}>
+          {metrica.valorAnterior}
+          {metrica.unidade}
+        </Text>
+        {/* A fonte padrão do PDF (Helvetica) não tem o glifo "→" — vira um
+         *  caractere quebrado. ">" é ASCII puro, sempre renderiza certo. */}
+        <Text style={[styles.paragrafo, { fontSize: 8, color: CORES.muted, marginHorizontal: 4 }]}>{">"}</Text>
+        <Text style={[styles.paragrafo, { fontSize: 12, fontFamily: "Helvetica-Bold" }]}>
+          {metrica.valorAtual}
+          {metrica.unidade}
+        </Text>
+        <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: cor.texto, marginLeft: 5 }}>
           {sinal}
           {metrica.deltaAbsoluto}
           {metrica.unidade}
         </Text>
-      </Text>
-      <Text style={[styles.paragrafo, { fontSize: 8.5, color: CORES.muted, marginTop: 3 }]}>{metrica.interpretacao}</Text>
+      </View>
+      <View style={{ marginBottom: 6 }}>
+        <View style={{ height: 3, borderRadius: 2, backgroundColor: "#00000010", marginBottom: 3 }}>
+          <View style={{ height: 3, borderRadius: 2, backgroundColor: "#00000033", width: larguraAnterior }} />
+        </View>
+        <View style={{ height: 3, borderRadius: 2, backgroundColor: "#00000010" }}>
+          <View style={{ height: 3, borderRadius: 2, backgroundColor: cor.barra, width: larguraAtual }} />
+        </View>
+      </View>
+      <Text style={[styles.paragrafo, { fontSize: 8.5, color: CORES.muted }]}>{metrica.interpretacao}</Text>
     </View>
   );
 }

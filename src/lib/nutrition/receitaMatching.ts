@@ -7,6 +7,7 @@
  * `dietas_atendidas`) gravadas em cada receita — determinístico e testável.
  */
 import type { AvaliacaoNutricional, CategoriaReceita, CondicaoSaude, IndicacaoSaudeReceita, Receita } from "@/types/domain";
+
 /** Vocabulário fechado de alérgenos reconhecidos. */
 const MAPA_ALERGENOS: Record<string, string> = {
   amendoim: "amendoim",
@@ -30,6 +31,7 @@ const MAPA_ALERGENOS: Record<string, string> = {
   "frutos do mar": "frutos_do_mar",
   soja: "soja",
 };
+
 /** Vocabulário fechado de dietas/restrições reconhecidas. */
 const MAPA_DIETAS: Record<string, string> = {
   vegetariano: "vegetariano",
@@ -44,6 +46,7 @@ const MAPA_DIETAS: Record<string, string> = {
   "intolerante a lactose": "sem_lactose",
   "intolerante à lactose": "sem_lactose",
 };
+
 export function normalizar(texto: string): string {
   return texto
     .toLowerCase()
@@ -51,6 +54,7 @@ export function normalizar(texto: string): string {
     .replace(new RegExp("[̀-ͯ]", "g"), "")
     .trim();
 }
+
 function extrairTags(itens: string[], mapa: Record<string, string>): Set<string> {
   const normalizados = itens.map(normalizar);
   const tags = new Set<string>();
@@ -60,6 +64,7 @@ function extrairTags(itens: string[], mapa: Record<string, string>): Set<string>
   }
   return tags;
 }
+
 /** Vocabulário fechado completo de indicações de receita — usado tanto pra
  *  validar o que a IA pode escolher pra "outra condição" quanto pra montar
  *  o filtro a partir das condições de saúde estruturadas abaixo. */
@@ -70,6 +75,7 @@ export const INDICACOES_SAUDE_VOCABULARIO: IndicacaoSaudeReceita[] = [
   "controle_renal",
   "alta_fibra",
 ];
+
 /** Mapeia cada condição de saúde estruturada pra indicação(ões) de receita
  *  correspondente(s) — sinal de PRIORIDADE (nunca bloqueio duro, diferente
  *  de alergia): se não houver receita com a tag, ainda mostramos as outras
@@ -83,6 +89,7 @@ const MAPA_CONDICAO_INDICACAO: Record<CondicaoSaude, IndicacaoSaudeReceita[]> = 
   hipertireoidismo: [],
   colesterol_alto: ["baixo_colesterol"],
 };
+
 export interface FiltroReceitas {
   /** Alérgenos que NENHUMA receita sugerida pode conter (bloqueio duro). */
   alergiasBloqueadas: Set<string>;
@@ -95,6 +102,7 @@ export interface FiltroReceitas {
    *  de "outra condição" em texto livre (ver mealPlanGenerator.ts). */
   indicacoesPreferidas: Set<IndicacaoSaudeReceita>;
 }
+
 export function construirFiltro(avaliacao: AvaliacaoNutricional): FiltroReceitas {
   const indicacoesPreferidas = new Set<IndicacaoSaudeReceita>();
   for (const condicao of avaliacao.condicoes_saude ?? []) {
@@ -102,6 +110,7 @@ export function construirFiltro(avaliacao: AvaliacaoNutricional): FiltroReceitas
       indicacoesPreferidas.add(tag);
     }
   }
+
   return {
     alergiasBloqueadas: extrairTags(avaliacao.alergias, MAPA_ALERGENOS),
     dietasExigidas: extrairTags(avaliacao.restricoes_alimentares, MAPA_DIETAS),
@@ -109,6 +118,7 @@ export function construirFiltro(avaliacao: AvaliacaoNutricional): FiltroReceitas
     indicacoesPreferidas,
   };
 }
+
 /** Uma receita é segura se não contém nenhum alérgeno bloqueado e atende a todas as dietas exigidas. */
 export function receitaEhSegura(receita: Receita, filtro: FiltroReceitas): boolean {
   const alergenos = new Set(receita.alergenos ?? []);
@@ -121,12 +131,14 @@ export function receitaEhSegura(receita: Receita, filtro: FiltroReceitas): boole
   }
   return true;
 }
+
 function receitaContemAlimentoEvitado(receita: Receita, filtro: FiltroReceitas): boolean {
   if (filtro.alimentosEvitados.length === 0) return false;
   return receita.ingredientes.some((ing) =>
     filtro.alimentosEvitados.some((evitado) => normalizar(ing.nome).includes(evitado))
   );
 }
+
 /** Também usado para checar o texto livre gerado por IA contra alergias reais do usuário
  *  (segunda camada de segurança, além do filtro estrutural por tags). */
 export function textoContemAlergiaDoUsuario(texto: string, alergias: string[]): boolean {
@@ -136,6 +148,7 @@ export function textoContemAlergiaDoUsuario(texto: string, alergias: string[]): 
     return termo.length > 2 && textoNorm.includes(termo);
   });
 }
+
 /** Receitas da categoria pedida que respeitam alergias/restrições, priorizando
  *  as que também evitam o que o usuário disse não gostar. */
 export function filtrarReceitasCompativeis(
@@ -147,6 +160,7 @@ export function filtrarReceitasCompativeis(
   const seguras = daCategoria.filter((r) => receitaEhSegura(r, filtro));
   const preferidas = seguras.filter((r) => !receitaContemAlimentoEvitado(r, filtro));
   let pool = preferidas.length > 0 ? preferidas : seguras;
+
   // Desempate 1: entre as receitas já seguras/preferidas, dá prioridade às
   // que batem com alguma indicação de saúde do paciente (ex: baixo_sodio pra
   // hipertensão). Nunca reduz o pool a zero — se nenhuma bater, segue com o
@@ -157,6 +171,7 @@ export function filtrarReceitasCompativeis(
     );
     if (comIndicacao.length > 0) pool = comIndicacao;
   }
+
   // Desempate 2: custo. Sempre ativo, pra todo mundo (não depende de nenhuma
   // resposta do paciente) — o público-alvo do app é majoritariamente sensível
   // a preço, então uma receita "alto" custo (ex: salmão) só deveria aparecer
@@ -164,65 +179,67 @@ export function filtrarReceitasCompativeis(
   // indicado. Mesma regra de nunca zerar o pool.
   const acessiveis = pool.filter((r) => r.custo !== "alto");
   if (acessiveis.length > 0) return acessiveis;
+
   return pool;
 }
-/** Metas de calorias e macronutrientes de UMA refeição específica (já
- *  proporcionais ao que ainda falta bater da meta diária — ver
- *  alocarReceitasDoDia em mealPlanGenerator.ts). */
-export interface MetasRefeicao {
-  calorias: number;
-  proteinaG: number;
-  carboidratoG: number;
-  gorduraG: number;
-}
-/**
- * Identifica o "prato feito" tradicional brasileiro (arroz + feijão como
- * base) pelos ingredientes da receita — não por uma tag manual, pra não
- * depender de cadastro consistente. Usado só como critério de DESEMPATE em
- * escolherReceita: entre receitas com distância parecida da meta, prioriza
- * esse padrão, porque é como a maior parte da população realmente come no
- * dia a dia (não é "mais uma opção entre várias equivalentes" — é a base
- * mais comum de almoço/jantar no Brasil, especialmente pro público sensível
- * a preço que o app já prioriza via `custo`).
- */
-function ehPratoTradicional(receita: Receita): boolean {
-  const nomesIngredientes = receita.ingredientes.map((i) => normalizar(i.nome));
-  const temArroz = nomesIngredientes.some((n) => n.includes("arroz"));
-  const temFeijao = nomesIngredientes.some((n) => n.includes("feij"));
-  return temArroz && temFeijao;
-}
-/**
- * Escolhe a receita mais equilibrada em relação às metas de calorias E
- * macronutrientes da refeição — antes só olhava pra calorias, o que podia
- * escolher uma receita rica em proteína/gordura mas pobre em carboidrato
- * mesmo batendo a meta calórica. Cada desvio é normalizado pelo próprio
- * alvo (% de erro), pra que um erro de 10g numa meta pequena pese o mesmo
- * que 10g numa meta grande. Evita repetir uma receita já usada recentemente
- * na semana quando há alternativa.
- *
- * Entre receitas com distância parecida da meta, dá uma vantagem pro "prato
- * feito" tradicional (arroz + feijão) — um desconto de 15% na distância
- * calculada, não um bônus que ignora a meta nutricional. Isso faz esse
- * padrão vencer empates e quase-empates (o caso comum), mas ainda perde pra
- * uma receita bem mais alinhada à meta quando a diferença for grande.
- */
+
+/** Escolhe a receita com calorias mais próximas do alvo, evitando repetir
+ *  uma já usada recentemente na semana quando há alternativa.
+ *  @deprecated Prefira escolherReceitaPorMacro quando o alvo de macros da
+ *  refeição estiver disponível — essa versão só olha calorias e foi
+ *  justamente a causa raiz de planos que batiam a meta calórica mas vinham
+ *  com proteína/gordura sobrando e carboidrato faltando (escalar a porção
+ *  de uma receita escolhida só por calorias preserva a proporção interna
+ *  dela, nunca corrige um desalinhamento de macro). Mantida só por
+ *  compatibilidade; não usar em código novo. */
 export function escolherReceita(
   candidatas: Receita[],
-  metas: MetasRefeicao,
+  caloriasAlvo: number,
   usadasRecentemente: Set<string>
 ): Receita | null {
   if (candidatas.length === 0) return null;
   const naoRepetidas = candidatas.filter((r) => !usadasRecentemente.has(r.id));
   const pool = naoRepetidas.length > 0 ? naoRepetidas : candidatas;
-  const desvio = (valor: number, alvo: number) => (alvo > 0 ? Math.abs(valor - alvo) / alvo : 0);
-  const DESCONTO_PRATO_TRADICIONAL = 0.85;
-  const distancia = (r: Receita) => {
-    const bruta =
-      desvio(r.calorias, metas.calorias) +
-      desvio(r.proteina_g, metas.proteinaG) +
-      desvio(r.carboidrato_g, metas.carboidratoG) +
-      desvio(r.gordura_g, metas.gorduraG);
-    return ehPratoTradicional(r) ? bruta * DESCONTO_PRATO_TRADICIONAL : bruta;
-  };
-  return pool.reduce((melhor, atual) => (distancia(atual) < distancia(melhor) ? atual : melhor));
+  return pool.reduce((melhor, atual) =>
+    Math.abs(atual.calorias - caloriasAlvo) < Math.abs(melhor.calorias - caloriasAlvo) ? atual : melhor
+  );
+}
+
+/** Alvo de calorias + macronutrientes de uma refeição específica (fração da
+ *  meta diária do paciente proporcional ao peso daquele horário — ver
+ *  escolherTemplates em mealPlanGenerator.ts). */
+export interface AlvoMacroRefeicao {
+  calorias: number;
+  proteina_g: number;
+  carboidrato_g: number;
+  gordura_g: number;
+}
+
+/** Escolhe a receita cujo conjunto de calorias E macronutrientes fica mais
+ *  próximo do alvo da refeição — não só calorias. Cada eixo entra no
+ *  placar como desvio RELATIVO ao alvo (proporção, não valor absoluto em
+ *  gramas), pra proteína/carboidrato/gordura pesarem de forma comparável
+ *  mesmo tendo escalas bem diferentes. Os três macros juntos pesam mais que
+ *  as calorias sozinhas na decisão, porque calorias já são, na prática,
+ *  uma soma derivada dos três — otimizar só por elas (como escolherReceita
+ *  fazia) é o que causava planos com proteína/gordura sobrando e
+ *  carboidrato faltando mesmo com a semana inteira preenchida. */
+export function escolherReceitaPorMacro(
+  candidatas: Receita[],
+  alvo: AlvoMacroRefeicao,
+  usadasRecentemente: Set<string>
+): Receita | null {
+  if (candidatas.length === 0) return null;
+  const naoRepetidas = candidatas.filter((r) => !usadasRecentemente.has(r.id));
+  const pool = naoRepetidas.length > 0 ? naoRepetidas : candidatas;
+
+  function desvio(receita: Receita): number {
+    const dCal = alvo.calorias > 0 ? Math.abs(receita.calorias - alvo.calorias) / alvo.calorias : 0;
+    const dProt = alvo.proteina_g > 0 ? Math.abs(receita.proteina_g - alvo.proteina_g) / alvo.proteina_g : 0;
+    const dCarb = alvo.carboidrato_g > 0 ? Math.abs(receita.carboidrato_g - alvo.carboidrato_g) / alvo.carboidrato_g : 0;
+    const dGord = alvo.gordura_g > 0 ? Math.abs(receita.gordura_g - alvo.gordura_g) / alvo.gordura_g : 0;
+    return dCal * 1 + dProt * 1.5 + dCarb * 1.5 + dGord * 1.5;
+  }
+
+  return pool.reduce((melhor, atual) => (desvio(atual) < desvio(melhor) ? atual : melhor));
 }

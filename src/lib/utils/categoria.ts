@@ -8,6 +8,11 @@ export const CATEGORIA_LABEL: Record<CategoriaReceita, string> = {
   sobremesa: "Sobremesa",
   pre_treino: "Pré-treino",
   pos_treino: "Pós-treino",
+  // Item simples usado só pelo motor de ajuste de macros (ajusteMacros.ts)
+  // pra completar um dia que ficou desviado da meta — nunca escolhido
+  // manualmente na tela de Receitas, mas precisa de rótulo aqui porque
+  // Record<CategoriaReceita, string> exige todos os valores do tipo.
+  complemento: "Complemento",
 };
 
 /**

@@ -5,6 +5,7 @@ import { mercadoPagoAdapter } from "./mercadoPagoAdapter";
 import { asaasAdapter } from "./asaasAdapter";
 import { hotmartAdapter } from "./hotmartAdapter";
 import { kiwifyAdapter } from "./kiwifyAdapter";
+import { caktoAdapter } from "./caktoAdapter";
 
 const ADAPTERS: Record<ProvedorPagamento, ProvedorPagamentoAdapter> = {
   stripe: stripeAdapter,
@@ -12,6 +13,7 @@ const ADAPTERS: Record<ProvedorPagamento, ProvedorPagamentoAdapter> = {
   asaas: asaasAdapter,
   hotmart: hotmartAdapter,
   kiwify: kiwifyAdapter,
+  cakto: caktoAdapter,
 };
 
 /**

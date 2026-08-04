@@ -102,6 +102,23 @@ export default function ConfiguracoesPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Suporte</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-muted">
+            Precisa de ajuda ou tem alguma dúvida sobre o Nutri em Casa? Fale com a gente.
+          </p>
+          <a
+            href="mailto:nutriciemcasa@gmail.com"
+            className="text-sm font-medium text-brand-700 underline underline-offset-2"
+          >
+            nutriciemcasa@gmail.com
+          </a>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Segurança</CardTitle>
         </CardHeader>
         <CardContent>
@@ -118,7 +135,11 @@ export default function ConfiguracoesPage() {
         <CardContent>
           <p className="mb-3 text-sm text-muted">
             Para excluir sua conta e todos os seus dados permanentemente, entre em contato com o
-            suporte. Essa ação não pode ser desfeita.
+            suporte (
+            <a href="mailto:nutriciemcasa@gmail.com" className="underline underline-offset-2">
+              nutriciemcasa@gmail.com
+            </a>
+            ). Essa ação não pode ser desfeita.
           </p>
           <Button variante="perigo" disabled>
             Excluir minha conta

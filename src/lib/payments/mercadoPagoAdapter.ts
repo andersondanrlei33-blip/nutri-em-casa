@@ -79,6 +79,7 @@ export const mercadoPagoAdapter: ProvedorPagamentoAdapter = {
         tipo: "assinatura_ativada",
         idExterno: payload.data?.id ?? payload.id,
         usuarioId: null,
+        email: null,
         plano: null,
         dataEvento: new Date().toISOString(),
       };

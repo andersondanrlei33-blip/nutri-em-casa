@@ -63,6 +63,7 @@ export const stripeAdapter: ProvedorPagamentoAdapter = {
           tipo: "assinatura_ativada",
           idExterno: String(session.subscription ?? session.id),
           usuarioId: session.client_reference_id ?? session.metadata?.usuarioId ?? null,
+          email: session.customer_details?.email ?? session.customer_email ?? null,
           plano: (session.metadata?.plano as EventoWebhookPagamento["plano"]) ?? "premium",
           dataEvento: new Date().toISOString(),
         };
@@ -73,6 +74,7 @@ export const stripeAdapter: ProvedorPagamentoAdapter = {
           tipo: "assinatura_renovada",
           idExterno: String(invoice.subscription ?? invoice.id),
           usuarioId: null,
+          email: invoice.customer_email ?? null,
           plano: null,
           dataEvento: new Date().toISOString(),
         };
@@ -83,6 +85,7 @@ export const stripeAdapter: ProvedorPagamentoAdapter = {
           tipo: "assinatura_cancelada",
           idExterno: sub.id,
           usuarioId: null,
+          email: null,
           plano: null,
           dataEvento: new Date().toISOString(),
         };
@@ -93,6 +96,7 @@ export const stripeAdapter: ProvedorPagamentoAdapter = {
           tipo: "pagamento_falhou",
           idExterno: String(invoice.subscription ?? invoice.id),
           usuarioId: null,
+          email: invoice.customer_email ?? null,
           plano: null,
           dataEvento: new Date().toISOString(),
         };

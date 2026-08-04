@@ -52,6 +52,7 @@ export const kiwifyAdapter: ProvedorPagamentoAdapter = {
         tipo: mapa[status],
         idExterno: payload.order_id ?? "",
         usuarioId: payload.ref ?? null,
+        email: payload.Customer?.email ?? null,
         plano: null,
         dataEvento: new Date().toISOString(),
       };

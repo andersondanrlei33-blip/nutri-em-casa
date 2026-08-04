@@ -103,8 +103,8 @@ export const caktoAdapter: ProvedorPagamentoAdapter = {
     let tipo: EventoWebhookPagamento["tipo"] | null = null;
     if (/renov|renew/i.test(evento)) tipo = "assinatura_renovada";
     else if (/cancel|reembols|refund|chargeback|estorn/i.test(evento)) tipo = "assinatura_cancelada";
-    else if (/recus|failed|falh|atras|overdue/i.test(evento)) tipo = "pagamento_falhou";
-    else if (/aprovad|approved|paid|pago/i.test(evento)) tipo = "assinatura_ativada";
+    else if (/recus|failed|falh|atras|overdue|declin/i.test(evento)) tipo = "pagamento_falhou";
+    else if (/aprovad|approved|paid|pago|criad|created/i.test(evento)) tipo = "assinatura_ativada";
 
     if (!tipo) return null;
 

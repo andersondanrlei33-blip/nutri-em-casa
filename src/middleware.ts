@@ -8,9 +8,13 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except static assets, images and the PWA
-     * manifest/service worker so those are always served directly.
+     * Match all request paths except static assets, images, the PWA
+     * manifest/service worker and API routes (webhooks e outras rotas de
+     * API fazem sua própria validação — ex.: secret do webhook da Cakto —
+     * e não devem passar pelo middleware de sessão do Supabase, que
+     * redireciona requisições não autenticadas para /login e quebra
+     * qualquer POST de webhook externo).
      */
-    "/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons/|.*\\.(?:svg|png|jpg|jpeg|webp)$).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons/|.*\\.(?:svg|png|jpg|jpeg|webp)$).*)",
   ],
 };

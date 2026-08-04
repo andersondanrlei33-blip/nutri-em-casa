@@ -27,7 +27,8 @@ export type ProvedorPagamento =
   | "mercadopago"
   | "asaas"
   | "hotmart"
-  | "kiwify";
+  | "kiwify"
+  | "cakto";
 /** Lista fechada (não texto livre) — cada uma tem um ajuste clínico
  *  associado em lib/nutrition/calculations.ts::avaliarCondicoesSaude. */
 export type CondicaoSaude =

@@ -19,6 +19,13 @@ export interface EventoWebhookPagamento {
   tipo: "assinatura_ativada" | "assinatura_renovada" | "assinatura_cancelada" | "pagamento_falhou";
   idExterno: string;
   usuarioId: string | null;
+  /** E-mail do comprador, quando o gateway não devolve um identificador
+   *  interno do usuário no webhook (caso da Cakto, que não faz passthrough
+   *  de parâmetros customizados no link de checkout hospedado) — usado
+   *  pela rota de webhook pra resolver o usuario_id via tabela `perfis`
+   *  quando `usuarioId` vier null. Os demais adapters (Stripe, Mercado
+   *  Pago...) podem deixar null, já que já resolvem usuarioId sozinhos. */
+  email: string | null;
   plano: PlanoAssinatura | null;
   dataEvento: string;
 }

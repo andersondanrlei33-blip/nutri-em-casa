@@ -70,6 +70,7 @@ export const asaasAdapter: ProvedorPagamentoAdapter = {
         tipo: mapa[evento],
         idExterno: payload.payment?.subscription ?? payload.payment?.id ?? "",
         usuarioId: payload.payment?.externalReference ?? null,
+        email: null,
         plano: null,
         dataEvento: new Date().toISOString(),
       };

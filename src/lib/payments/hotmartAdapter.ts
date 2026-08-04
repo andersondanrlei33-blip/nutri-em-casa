@@ -63,6 +63,7 @@ export const hotmartAdapter: ProvedorPagamentoAdapter = {
         tipo: mapa[evento],
         idExterno: payload.data?.purchase?.transaction ?? "",
         usuarioId: payload.data?.purchase?.src ?? null,
+        email: payload.data?.buyer?.email ?? null,
         plano: null,
         dataEvento: new Date().toISOString(),
       };

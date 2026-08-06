@@ -41,7 +41,7 @@ export default function AssinaturaPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-2xl">
       <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold text-foreground">Assinatura</h1>
         <p className="mt-1 text-sm text-muted">
@@ -53,10 +53,10 @@ export default function AssinaturaPage() {
         </p>
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-3">
-        {(["gratuito", "premium", "anual"] as const).map((id) => {
+      <div className="grid gap-5 sm:grid-cols-2">
+        {(["gratuito", "premium"] as const).map((id) => {
           const plano = PLANOS[id];
-          const destaque = id === "anual";
+          const destaque = id === "premium";
           const ehPlanoAtual = assinatura?.plano === id || (id === "gratuito" && !premiumAtivo);
 
           return (

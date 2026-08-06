@@ -6,9 +6,7 @@ import {
   LineChart,
   ShieldCheck,
   Sparkles,
-  Check,
 } from "lucide-react";
-import { PLANOS, formatarPreco } from "@/lib/subscriptions/plans";
 
 const RECURSOS = [
   {
@@ -99,58 +97,18 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="planos" className="mx-auto max-w-5xl px-6 py-16">
-        <h2 className="text-center text-2xl font-bold text-foreground">Planos simples e diretos</h2>
-        <p className="mx-auto mt-2 max-w-lg text-center text-muted">
-          Comece grátis. Vire Premium quando quiser desbloquear planos ilimitados e a biblioteca completa.
+      <section id="planos" className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <h2 className="text-2xl font-bold text-foreground">Comece grátis, sem cartão</h2>
+        <p className="mx-auto mt-2 max-w-lg text-muted">
+          Faça sua consulta nutricional com IA gratuitamente. Depois, se quiser desbloquear planos
+          ilimitados e a biblioteca completa de receitas, é só assinar o Premium dentro do app.
         </p>
-        <div className="mt-10 grid gap-5 sm:grid-cols-3">
-          {(["gratuito", "premium", "anual"] as const).map((id) => {
-            const plano = PLANOS[id];
-            const destaque = id === "anual";
-            return (
-              <div
-                key={id}
-                className={`rounded-2xl border p-6 ${
-                  destaque ? "border-brand-500 bg-brand-50/50 shadow-md" : "border-border bg-white"
-                }`}
-              >
-                {destaque && (
-                  <span className="mb-3 inline-block rounded-full bg-brand-500 px-2.5 py-1 text-xs font-medium text-white">
-                    Melhor custo-benefício
-                  </span>
-                )}
-                <h3 className="text-lg font-semibold text-foreground">{plano.nome}</h3>
-                <p className="mt-1 text-sm text-muted">{plano.descricao}</p>
-                <p className="mt-4 text-3xl font-bold text-foreground">
-                  {formatarPreco(plano.precoMensalCentavos)}
-                  <span className="text-sm font-normal text-muted">/mês</span>
-                </p>
-                <ul className="mt-5 space-y-2 text-sm text-foreground">
-                  {Object.entries(plano.funcionalidades)
-                    .filter(([, valor]) => valor === true)
-                    .slice(0, 5)
-                    .map(([chave]) => (
-                      <li key={chave} className="flex items-center gap-2">
-                        <Check className="h-4 w-4 text-brand-500" />
-                        {traduzirFuncionalidade(chave)}
-                      </li>
-                    ))}
-                </ul>
-                <Link
-                  href="/cadastro"
-                  className={`mt-6 block rounded-xl px-4 py-2.5 text-center text-sm font-medium ${
-                    destaque
-                      ? "bg-brand-500 text-white hover:bg-brand-600"
-                      : "border border-border text-foreground hover:bg-black/[0.02]"
-                  }`}
-                >
-                  Escolher plano
-                </Link>
-              </div>
-            );
-          })}
-        </div>
+        <Link
+          href="/cadastro"
+          className="mt-6 inline-block rounded-xl bg-brand-500 px-6 py-3 text-center font-medium text-white shadow-lg shadow-brand-500/20 hover:bg-brand-600"
+        >
+          Começar agora, é grátis
+        </Link>
       </section>
 
       <footer className="border-t border-border py-8 text-center text-sm text-muted">
@@ -164,14 +122,3 @@ export default function LandingPage() {
   );
 }
 
-function traduzirFuncionalidade(chave: string): string {
-  const nomes: Record<string, string> = {
-    consultaIA: "Consulta nutricional com IA",
-    planosAlimentaresIlimitados: "Planos alimentares ilimitados",
-    bibliotecaReceitasCompleta: "Biblioteca de receitas completa",
-    listaComprasAutomatica: "Lista de compras automática",
-    acompanhamentoAvancado: "Acompanhamento avançado",
-    exportarRelatorios: "Exportar relatórios",
-  };
-  return nomes[chave] ?? chave;
-}

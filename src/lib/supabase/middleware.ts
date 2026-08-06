@@ -41,7 +41,7 @@ export async function updateSession(request: NextRequest) {
 
   // "/planos" não existe como rota própria — a landing page usa "/#planos"
   // (âncora) e a página real de assinatura é "/assinatura".
-  const publicPaths = ["/", "/login", "/cadastro", "/auth"];
+  const publicPaths = ["/", "/login", "/cadastro", "/auth", "/definir-senha"];
   const isPublic = publicPaths.some(
     (p) => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + "/")
   );

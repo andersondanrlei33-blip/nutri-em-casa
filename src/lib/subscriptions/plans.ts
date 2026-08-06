@@ -57,8 +57,8 @@ export const PLANOS: Record<PlanoAssinatura, DefinicaoPlano> = {
   },
   premium: {
     id: "premium",
-    nome: "Premium Mensal",
-    precoMensalCentavos: 2990,
+    nome: "Premium",
+    precoMensalCentavos: 4797,
     precoAnualCentavos: null,
     descricao: "Tudo do Nutri em Casa, sem limites, cobrado mensalmente.",
     funcionalidades: {
